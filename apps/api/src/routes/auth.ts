@@ -143,6 +143,20 @@ export function authRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
+  router.post('/admin/login', validate(loginSchema), async (req, res, next) => {
+    try {
+      const result = await Login.execute(
+        { ...container, loginLimiter },
+        { role: 'admin', email: req.body.email, password: req.body.password, ip: req.ip ?? null, deviceInfo: extractDeviceInfo(req) },
+      );
+      if (result.type !== 'mfa_required') {
+        res.status(500).json({ error: { code: 'INTERNAL', message: 'Unexpected login result.' } });
+        return;
+      }
+      res.json({ mfa_required: true, mfa_token: result.mfa_token });
+    } catch (err) { next(err); }
+  });
+
   // ─── MFA setup (provider onboarding, after verify-email) ─────────────────────
   router.post('/mfa/setup', auditLog('auth.mfa_setup_started', 'user'), async (req, res, next) => {
     try {

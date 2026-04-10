@@ -16,7 +16,7 @@ type Deps = Pick<Container, 'db' | 'email' | 'logger'> & {
 };
 
 export type LoginInput = {
-  role: 'patient' | 'provider';
+  role: 'patient' | 'provider' | 'admin';
   email: string;
   password: string;
   ip: string | null;
@@ -127,15 +127,16 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
     return { type: 'tokens', ...tokens };
   }
 
-  // Provider flow: always require MFA.
-  if (user.role !== 'provider') {
-    logger.debug({ userId: user.id, actualRole: user.role }, 'login: rejected — wrong portal');
-    throw new AppError(403, 'WRONG_PORTAL', 'This account is not a provider account. Use the patient login.');
+  // Provider & Admin flow: always require MFA.
+  if (user.role !== input.role) {
+    logger.debug({ userId: user.id, actualRole: user.role, expectedRole: input.role }, 'login: rejected — wrong portal');
+    const portal = input.role === 'admin' ? 'admin' : 'provider';
+    throw new AppError(403, 'WRONG_PORTAL', `This account is not a ${portal} account.`);
   }
   if (!user.mfa_enabled) {
-    logger.debug({ userId: user.id }, 'login: rejected — provider has no MFA');
+    logger.debug({ userId: user.id }, `login: rejected — ${input.role} has no MFA`);
     throw new AppError(403, 'MFA_NOT_SETUP', 'MFA is not set up. Please complete your account setup first.');
   }
-  logger.debug({ userId: user.id }, 'login: provider mfa_token issued');
+  logger.debug({ userId: user.id }, `login: ${input.role} mfa_token issued`);
   return { type: 'mfa_required', mfa_token: signMfaToken(user.id) };
 }

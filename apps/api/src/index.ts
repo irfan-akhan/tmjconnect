@@ -121,6 +121,7 @@ async function bootstrap() {
   // Auth routes with tighter rate limits (covers both /patient/* and /provider/* paths).
   app.use(`${API_PREFIX}/auth/patient/login`, rateLimiters.auth);
   app.use(`${API_PREFIX}/auth/provider/login`, rateLimiters.auth);
+  app.use(`${API_PREFIX}/auth/admin/login`, rateLimiters.auth);
   app.use(`${API_PREFIX}/auth/patient/register`, rateLimiters.auth);
   app.use(`${API_PREFIX}/auth/provider/register`, rateLimiters.auth);
   app.use(`${API_PREFIX}/auth/forgot-password`, rateLimiters.auth);
