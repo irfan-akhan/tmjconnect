@@ -52,12 +52,17 @@ export function authRouter(container: Container) {
   // Login → tokens directly (or mfa_token if patient opted into MFA)
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  router.post('/patient/register', validate(registerPatientSchema), async (req, res, next) => {
-    try {
-      await Register.execute(container, { role: 'patient', ...req.body });
-      res.status(201).json({ message: 'Check your email to verify your account.' });
-    } catch (err) { next(err); }
-  });
+  router.post(
+    '/patient/register',
+    validate(registerPatientSchema),
+    auditLog('auth.patient_registered', 'user'),
+    async (req, res, next) => {
+      try {
+        await Register.execute(container, { role: 'patient', ...req.body });
+        res.status(201).json({ message: 'Check your email to verify your account.' });
+      } catch (err) { next(err); }
+    },
+  );
 
   router.post('/patient/login', validate(loginSchema), async (req, res, next) => {
     try {
@@ -79,16 +84,21 @@ export function authRouter(container: Container) {
   // Step 3: POST /mfa/verify-setup (Bearer: setup_token + code) → enables MFA + tokens
   // Disable: DELETE /patient/mfa (requires password confirmation)
 
-  router.post('/patient/mfa/init', authenticate, async (req, res, next) => {
-    try {
-      if (req.user!.role !== 'patient') {
-        res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Use the provider MFA flow.' } });
-        return;
-      }
-      const result = await PatientInitMfa.execute(container, { userId: req.user!.id });
-      res.json(result);
-    } catch (err) { next(err); }
-  });
+  router.post(
+    '/patient/mfa/init',
+    authenticate,
+    auditLog('auth.mfa_init', 'user'),
+    async (req, res, next) => {
+      try {
+        if (req.user!.role !== 'patient') {
+          res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Use the provider MFA flow.' } });
+          return;
+        }
+        const result = await PatientInitMfa.execute(container, { userId: req.user!.id });
+        res.json(result);
+      } catch (err) { next(err); }
+    },
+  );
 
   router.delete('/patient/mfa', authenticate, auditLog('auth.mfa_disabled'), async (req, res, next) => {
     try {
@@ -107,12 +117,17 @@ export function authRouter(container: Container) {
   // Login → mfa_token → mfa/verify → tokens
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  router.post('/provider/register', validate(registerProviderSchema), async (req, res, next) => {
-    try {
-      await Register.execute(container, { role: 'provider', ...req.body });
-      res.status(201).json({ message: 'Check your email to verify your account.' });
-    } catch (err) { next(err); }
-  });
+  router.post(
+    '/provider/register',
+    validate(registerProviderSchema),
+    auditLog('auth.provider_registered', 'user'),
+    async (req, res, next) => {
+      try {
+        await Register.execute(container, { role: 'provider', ...req.body });
+        res.status(201).json({ message: 'Check your email to verify your account.' });
+      } catch (err) { next(err); }
+    },
+  );
 
   router.post('/provider/login', validate(loginSchema), async (req, res, next) => {
     try {
@@ -129,7 +144,7 @@ export function authRouter(container: Container) {
   });
 
   // ─── MFA setup (provider onboarding, after verify-email) ─────────────────────
-  router.post('/mfa/setup', async (req, res, next) => {
+  router.post('/mfa/setup', auditLog('auth.mfa_setup_started', 'user'), async (req, res, next) => {
     try {
       const authHeader = req.headers.authorization;
       const setupToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -138,20 +153,25 @@ export function authRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.post('/mfa/verify-setup', validate(mfaVerifySetupSchema), async (req, res, next) => {
-    try {
-      const authHeader = req.headers.authorization;
-      const setupToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-      if (!setupToken) { res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Setup token required.' } }); return; }
-      const result = await VerifyMfaSetup.execute(container, { setupToken, code: req.body.code });
-      res.json({
-        message: 'MFA setup complete. Save these backup codes — they will not be shown again.',
-        backup_codes: result.backup_codes,
-        access_token: result.access_token,
-        refresh_token: result.refresh_token,
-      });
-    } catch (err) { next(err); }
-  });
+  router.post(
+    '/mfa/verify-setup',
+    validate(mfaVerifySetupSchema),
+    auditLog('auth.mfa_enabled', 'user'),
+    async (req, res, next) => {
+      try {
+        const authHeader = req.headers.authorization;
+        const setupToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+        if (!setupToken) { res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Setup token required.' } }); return; }
+        const result = await VerifyMfaSetup.execute(container, { setupToken, code: req.body.code });
+        res.json({
+          message: 'MFA setup complete. Save these backup codes — they will not be shown again.',
+          backup_codes: result.backup_codes,
+          access_token: result.access_token,
+          refresh_token: result.refresh_token,
+        });
+      } catch (err) { next(err); }
+    },
+  );
 
   // ─── MFA verify (provider login continuation) ────────────────────────────────
   router.post('/mfa/verify', validate(mfaVerifySchema), auditLog('auth.mfa_verify'), async (req, res, next) => {
@@ -200,12 +220,17 @@ export function authRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.post('/forgot-password', validate(forgotPasswordSchema), async (req, res, next) => {
-    try {
-      await ForgotPassword.execute(container, { email: req.body.email });
-      res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
-    } catch (err) { next(err); }
-  });
+  router.post(
+    '/forgot-password',
+    validate(forgotPasswordSchema),
+    auditLog('auth.password_reset_requested', 'user'),
+    async (req, res, next) => {
+      try {
+        await ForgotPassword.execute(container, { email: req.body.email });
+        res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+      } catch (err) { next(err); }
+    },
+  );
 
   router.post('/reset-password', validate(resetPasswordSchema), auditLog('auth.password_reset'), async (req, res, next) => {
     try {

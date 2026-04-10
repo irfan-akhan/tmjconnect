@@ -34,19 +34,28 @@ export function adminRouter(container: Container) {
   });
 
   // ─── User management ─────────────────────────────────────────────────────────
-  router.get('/users', validate(adminUserListQuerySchema, 'query'), async (req, res, next) => {
-    try {
-      const { page, limit, ...filters } = req.query as unknown as ListUsers.ListUsersInput;
-      const result = await ListUsers.execute(container, { page, limit, ...filters });
-      res.json({ data: result.items, meta: result.meta });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/users',
+    validate(adminUserListQuerySchema, 'query'),
+    auditLog('admin_listed_users', 'user'),
+    async (req, res, next) => {
+      try {
+        const { page, limit, ...filters } = req.query as unknown as ListUsers.ListUsersInput;
+        const result = await ListUsers.execute(container, { page, limit, ...filters });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
 
-  router.get('/users/:id', async (req, res, next) => {
-    try {
-      res.json({ data: await GetUser.execute(container, { userId: req.params.id }) });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/users/:id',
+    auditLog('admin_viewed_user', 'user'),
+    async (req, res, next) => {
+      try {
+        res.json({ data: await GetUser.execute(container, { userId: req.params.id }) });
+      } catch (err) { next(err); }
+    },
+  );
 
   router.patch('/users/:id', validate(adminUpdateUserSchema), auditLog('admin_user_updated', 'user'), async (req, res, next) => {
     try {
@@ -55,13 +64,20 @@ export function adminRouter(container: Container) {
   });
 
   // ─── Audit logs ──────────────────────────────────────────────────────────────
-  router.get('/audit-logs', validate(auditLogQuerySchema, 'query'), async (req, res, next) => {
-    try {
-      const { page, limit, ...filters } = req.query as unknown as ListAuditLogs.ListAuditLogsInput;
-      const result = await ListAuditLogs.execute(container, { page, limit, ...filters });
-      res.json({ data: result.items, meta: result.meta });
-    } catch (err) { next(err); }
-  });
+  // Reading the audit log is itself an audited event ("meta-audit") — it
+  // creates a chain of custody for any investigation.
+  router.get(
+    '/audit-logs',
+    validate(auditLogQuerySchema, 'query'),
+    auditLog('admin_viewed_audit_logs', 'audit_log'),
+    async (req, res, next) => {
+      try {
+        const { page, limit, ...filters } = req.query as unknown as ListAuditLogs.ListAuditLogsInput;
+        const result = await ListAuditLogs.execute(container, { page, limit, ...filters });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
 
   // CSV export — streamed response. Audited because bulk PHI export is a HIPAA-sensitive action.
   router.get('/audit-logs/export', validate(auditLogExportQuerySchema, 'query'), auditLog('admin_audit_export', 'audit_log'), async (req, res, next) => {
@@ -96,22 +112,32 @@ export function adminRouter(container: Container) {
   });
 
   // ─── Login events ────────────────────────────────────────────────────────────
-  router.get('/login-events', validate(loginEventQuerySchema, 'query'), async (req, res, next) => {
-    try {
-      const { page, limit, ...filters } = req.query as unknown as ListLoginEvents.ListLoginEventsInput;
-      const result = await ListLoginEvents.execute(container, { page, limit, ...filters });
-      res.json({ data: result.items, meta: result.meta });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/login-events',
+    validate(loginEventQuerySchema, 'query'),
+    auditLog('admin_viewed_login_events', 'login_event'),
+    async (req, res, next) => {
+      try {
+        const { page, limit, ...filters } = req.query as unknown as ListLoginEvents.ListLoginEventsInput;
+        const result = await ListLoginEvents.execute(container, { page, limit, ...filters });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
 
   // ─── All reports (cross-provider) ────────────────────────────────────────────
-  router.get('/reports', validate(adminReportsQuerySchema, 'query'), async (req, res, next) => {
-    try {
-      const { page, limit } = req.query as unknown as { page: number; limit: number };
-      const result = await ListAllReports.execute(container, { page, limit });
-      res.json({ data: result.items, meta: result.meta });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/reports',
+    validate(adminReportsQuerySchema, 'query'),
+    auditLog('admin_viewed_all_reports', 'report'),
+    async (req, res, next) => {
+      try {
+        const { page, limit } = req.query as unknown as { page: number; limit: number };
+        const result = await ListAllReports.execute(container, { page, limit });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
 
   return router;
 }

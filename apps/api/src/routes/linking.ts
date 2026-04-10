@@ -44,16 +44,22 @@ export function linkingRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.post('/codes/:code/invite', authorize('provider'), validate(emailInviteSchema), async (req, res, next) => {
-    try {
-      await EmailInvite.execute(container, {
-        providerId: req.user!.id,
-        patientEmail: req.body.patient_email,
-        code: req.params.code,
-      });
-      res.status(202).json({ message: 'Invitation email queued.' });
-    } catch (err) { next(err); }
-  });
+  router.post(
+    '/codes/:code/invite',
+    authorize('provider'),
+    validate(emailInviteSchema),
+    auditLog('linking_invite_sent', 'linking_code'),
+    async (req, res, next) => {
+      try {
+        await EmailInvite.execute(container, {
+          providerId: req.user!.id,
+          patientEmail: req.body.patient_email,
+          code: req.params.code,
+        });
+        res.status(202).json({ message: 'Invitation email queued.' });
+      } catch (err) { next(err); }
+    },
+  );
 
   // ─── Patient: accept code ────────────────────────────────────────────────────
   router.post('/accept', authorize('patient'), validate(acceptLinkingCodeSchema), auditLog('linking_code_accepted', 'linking_code'), async (req, res, next) => {

@@ -53,19 +53,28 @@ export function providersRouter(container: Container) {
   });
 
   // ─── Patient dashboard ───────────────────────────────────────────────────────
-  router.get('/patients', validate(patientListQuerySchema, 'query'), async (req, res, next) => {
-    try {
-      const { page, limit, search } = req.query as unknown as { page: number; limit: number; search?: string };
-      const result = await ListPatients.execute(container, { providerId: req.user!.id, page, limit, search });
-      res.json({ data: result.items, meta: result.meta });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/patients',
+    validate(patientListQuerySchema, 'query'),
+    auditLog('provider_listed_patients', 'user'),
+    async (req, res, next) => {
+      try {
+        const { page, limit, search } = req.query as unknown as { page: number; limit: number; search?: string };
+        const result = await ListPatients.execute(container, { providerId: req.user!.id, page, limit, search });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
 
-  router.get('/patients/:patientId', async (req, res, next) => {
-    try {
-      res.json({ data: await GetPatientDetail.execute(container, { providerId: req.user!.id, patientId: req.params.patientId }) });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/patients/:patientId',
+    auditLog('provider_viewed_patient_detail', 'user'),
+    async (req, res, next) => {
+      try {
+        res.json({ data: await GetPatientDetail.execute(container, { providerId: req.user!.id, patientId: req.params.patientId }) });
+      } catch (err) { next(err); }
+    },
+  );
 
   // ─── Patient clinical history (read-only, link-scoped) ──────────────────────
   router.get(

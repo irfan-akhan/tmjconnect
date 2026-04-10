@@ -25,13 +25,19 @@ export type VerifyEmailOutput =
 
 export async function execute(deps: Deps, input: VerifyEmailInput): Promise<VerifyEmailOutput> {
   const { db, email, logger, emailVerifyLimiter } = deps;
+  logger.debug('verify-email: start');
 
   const user = await findUnverifiedUser(db, input.email);
-  if (!user) throw new AppError(400, 'INVALID_CODE', 'Invalid or expired verification code.');
+  if (!user) {
+    logger.debug('verify-email: rejected — no unverified user');
+    throw new AppError(400, 'INVALID_CODE', 'Invalid or expired verification code.');
+  }
   if (!user.email_verify_code || !user.email_verify_expires) {
+    logger.debug({ userId: user.id }, 'verify-email: rejected — no code on user row');
     throw new AppError(400, 'INVALID_CODE', 'Invalid or expired verification code.');
   }
   if (new Date() > user.email_verify_expires) {
+    logger.debug({ userId: user.id }, 'verify-email: rejected — code expired');
     throw new AppError(400, 'CODE_EXPIRED', 'Verification code has expired. Please request a new one.');
   }
 
@@ -40,15 +46,18 @@ export async function execute(deps: Deps, input: VerifyEmailInput): Promise<Veri
   try {
     storedCode = decryptVerifyCode(user.email_verify_code);
   } catch {
+    logger.debug({ userId: user.id }, 'verify-email: rejected — code decrypt failed');
     throw new AppError(400, 'INVALID_CODE', 'Invalid or expired verification code.');
   }
 
   if (storedCode !== input.code) {
+    logger.debug({ userId: user.id }, 'verify-email: code mismatch');
     try {
       await emailVerifyLimiter.consume(input.email.toLowerCase());
     } catch (rlErr) {
       if (rlErr instanceof RateLimiterRes) {
         await invalidateVerifyCode(db, user.id);
+        logger.debug({ userId: user.id }, 'verify-email: rate limit exceeded — code invalidated');
         throw new AppError(
           429,
           'TOO_MANY_ATTEMPTS',
@@ -62,6 +71,7 @@ export async function execute(deps: Deps, input: VerifyEmailInput): Promise<Veri
 
   emailVerifyLimiter.delete(input.email.toLowerCase()).catch(() => {});
   await setEmailVerified(db, user.id);
+  logger.debug({ userId: user.id, role: user.role }, 'verify-email: code accepted, email verified');
 
   const fullUser = await findUserCoreById(db, user.id);
   if (!fullUser) throw new AppError(500, 'INTERNAL', 'User not found after verification.');
@@ -72,7 +82,9 @@ export async function execute(deps: Deps, input: VerifyEmailInput): Promise<Veri
 
   if (user.role === 'patient') {
     const tokens = await issueTokens(db, fullUser, 'email-verify', null);
+    logger.debug({ userId: user.id }, 'verify-email: patient tokens issued');
     return { type: 'tokens', ...tokens };
   }
+  logger.debug({ userId: user.id }, 'verify-email: provider setup_token issued');
   return { type: 'mfa_setup', setup_token: signMfaSetupToken(user.id) };
 }

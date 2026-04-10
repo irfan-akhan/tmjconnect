@@ -30,21 +30,27 @@ export function reportsRouter(container: Container) {
   });
 
   // ─── Provider inbox (must be defined before /:id to prevent route conflict) ─
-  router.get('/inbox', authorize('provider'), validate(reportInboxQuerySchema, 'query'), async (req, res, next) => {
-    try {
-      const { page, limit, ...filters } = req.query as unknown as {
-        page: number; limit: number;
-        status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
-        patient_id?: string; from?: string; to?: string;
-        urgency?: 'routine' | 'concerning' | 'urgent';
-      };
-      const result = await ProviderInbox.execute(container, { providerId: req.user!.id, page, limit, ...filters });
-      res.json({ data: result.items, meta: result.meta });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/inbox',
+    authorize('provider'),
+    validate(reportInboxQuerySchema, 'query'),
+    auditLog('provider_viewed_report_inbox', 'report'),
+    async (req, res, next) => {
+      try {
+        const { page, limit, ...filters } = req.query as unknown as {
+          page: number; limit: number;
+          status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
+          patient_id?: string; from?: string; to?: string;
+          urgency?: 'routine' | 'concerning' | 'urgent';
+        };
+        const result = await ProviderInbox.execute(container, { providerId: req.user!.id, page, limit, ...filters });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
 
   // ─── Get single report (both roles) ─────────────────────────────────────────
-  router.get('/:id', async (req, res, next) => {
+  router.get('/:id', auditLog('report_viewed', 'report'), async (req, res, next) => {
     try {
       const result = await GetReport.execute(container, {
         userId: req.user!.id,

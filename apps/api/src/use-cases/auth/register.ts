@@ -23,9 +23,13 @@ export type RegisterInput = {
 
 export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
   const { db, email, logger } = deps;
+  logger.debug({ role: input.role }, 'register: start');
 
   const existing = await findUserByEmail(db, input.email);
-  if (existing) throw new AppError(409, 'CONFLICT', 'An account with this email already exists.');
+  if (existing) {
+    logger.debug({ role: input.role }, 'register: rejected — email already exists');
+    throw new AppError(409, 'CONFLICT', 'An account with this email already exists.');
+  }
 
   const password_hash = await hashPassword(input.password);
   const email_verify_code = generateVerifyCode();
@@ -46,6 +50,7 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
     clinic_name: input.clinic_name,
     credentials: input.credentials,
   });
+  logger.debug({ role: input.role }, 'register: user created, sending verify email');
 
   email.sendVerifyEmail(input.email, email_verify_code)
     .catch((err) => logger.error({ err }, 'Failed to send verify email'));
