@@ -1,0 +1,8 @@
+Here's where things stand — the backend API is feature-complete for Sprints 1-4 (63 endpoints, documented, compiles clean). Your options:
+
+#	Direction	What it covers
+1	Frontend — Expo mobile app	Patient-facing React Native app: auth screens, symptom logging, exercise tracking, reports, notifications
+2	Frontend — React provider portal	Web dashboard: patient list, report inbox, exercise library, linking
+3	Testing	Integration tests for critical paths (auth flow, symptom upsert, report submission, linking), unit tests for scopeToUser/computeNextFireAt
+4	Docker + CI/CD	GitHub Actions pipeline, Dockerfile, docker-compose for pilot VPS deployment
+5	Sprint 6 polish	Sentry PII scrubbing, EXPLAIN ANALYZE on key queries, k6 load test script, RUNBOOK.md

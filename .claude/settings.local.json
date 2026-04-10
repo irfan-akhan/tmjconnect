@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(grep -n \"^        '200':$\\\\|^        '201':$\\\\|^        '204':$\" docs/openapi.yaml)",
+      "Bash(node -e \"const YAML = require\\('yamljs'\\); YAML.load\\('docs/openapi.yaml'\\); console.log\\('Valid YAML'\\)\")",
+      "Bash(node -e \"const YAML = require\\('yamljs'\\); const spec = YAML.load\\('docs/openapi.yaml'\\); const paths = Object.keys\\(spec.paths\\); console.log\\('Valid YAML —', paths.length, 'paths'\\); paths.filter\\(p => p.startsWith\\('/auth'\\)\\).forEach\\(p => console.log\\(' ', p\\)\\);\")",
+      "Bash(docker compose:*)",
+      "Bash(grep -n \"type: object$\\\\|items: { type: object }\\\\|data: { type: object }\" /Users/Irfan/lodgelink/tmjconnect/docs/openapi.yaml)",
+      "Bash(grep -n '$ref\\\\|type: object\\\\|type: array\\\\|items:' /Users/Irfan/lodgelink/tmjconnect/docs/openapi.yaml)",
+      "Bash(node -e ':*)",
+      "Bash(npx jest:*)",
+      "Read(//tmp/**)",
+      "Bash(find /Users/Irfan/lodgelink/tmjconnect/apps/api/src -name \"*.ts\" -type f ! -path \"*/node_modules/*\" -exec wc -l {} +)",
+      "Bash(grep -A 5 \"throw new AppError\\\\|throw new Error\" /Users/Irfan/lodgelink/tmjconnect/apps/api/src/db/queries/*.ts)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}

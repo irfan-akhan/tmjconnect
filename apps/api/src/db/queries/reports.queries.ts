@@ -1,0 +1,299 @@
+/**
+ * reports.queries.ts — All database interactions for the reports module.
+ * internal_notes is NEVER selected in patient-facing queries.
+ */
+import { eq, and, sql, desc } from 'drizzle-orm';
+import type { Db } from '../../config/database';
+import { reports, reportResponses, idempotencyKeys } from '../schema';
+
+type DbClient = Db['db'];
+
+// ─── Idempotency ─────────────────────────────────────────────────────────────────
+
+export async function findIdempotencyKey(db: DbClient, key: string) {
+  const [row] = await db
+    .select()
+    .from(idempotencyKeys)
+    .where(eq(idempotencyKeys.key, key))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function insertIdempotencyKey(
+  db: DbClient,
+  key: string,
+  responseStatus: number,
+  responseBody: Record<string, unknown>,
+) {
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await db.insert(idempotencyKeys).values({
+    key,
+    response_status: responseStatus,
+    response_body: responseBody,
+    expires_at: expiresAt,
+  });
+}
+
+// ─── Report submission ───────────────────────────────────────────────────────────
+
+export type ReportInsertData = {
+  patient_id: string;
+  provider_id: string;
+  urgency: 'routine' | 'concerning' | 'urgent';
+  pain_level?: number | null;
+  description: string;
+  photo_url?: string | null;
+  period_start?: Date | null;
+  period_end?: Date | null;
+  summary_data?: Record<string, unknown>;
+  patient_notes?: string | null;
+};
+
+export async function insertReport(db: DbClient, data: ReportInsertData) {
+  const [row] = await db
+    .insert(reports)
+    .values({
+      patient_id: data.patient_id,
+      provider_id: data.provider_id,
+      urgency: data.urgency,
+      pain_level: data.pain_level ?? null,
+      description: data.description,
+      photo_url: data.photo_url ?? null,
+      period_start: data.period_start ?? null,
+      period_end: data.period_end ?? null,
+      summary_data: data.summary_data ?? {},
+      patient_notes: data.patient_notes ?? null,
+    })
+    .returning();
+  return row;
+}
+
+/**
+ * insertReportWithIdempotencyKey — Atomically inserts the report and the
+ * idempotency key in a single transaction. Prevents duplicate reports on retry
+ * if the process crashes between the two writes.
+ */
+export async function insertReportWithIdempotencyKey(
+  db: DbClient,
+  data: ReportInsertData,
+  idempotencyKey: string,
+) {
+  return db.transaction(async (tx) => {
+    const [report] = await tx
+      .insert(reports)
+      .values({
+        patient_id: data.patient_id,
+        provider_id: data.provider_id,
+        urgency: data.urgency,
+        pain_level: data.pain_level ?? null,
+        description: data.description,
+        photo_url: data.photo_url ?? null,
+        period_start: data.period_start ?? null,
+        period_end: data.period_end ?? null,
+        summary_data: data.summary_data ?? {},
+        patient_notes: data.patient_notes ?? null,
+      })
+      .returning();
+
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await tx.insert(idempotencyKeys).values({
+      key: idempotencyKey,
+      response_status: 201,
+      response_body: { status: 'submitted', resourceId: report.id },
+      expires_at: expiresAt,
+    });
+
+    return report;
+  });
+}
+
+// ─── Patient report queries ──────────────────────────────────────────────────────
+
+export async function getReportForPatient(db: DbClient, reportId: string, patientId: string) {
+  const [row] = await db
+    .select({
+      id: reports.id,
+      provider_id: reports.provider_id,
+      urgency: reports.urgency,
+      pain_level: reports.pain_level,
+      description: reports.description,
+      photo_url: reports.photo_url,
+      period_start: reports.period_start,
+      period_end: reports.period_end,
+      summary_data: reports.summary_data,
+      patient_notes: reports.patient_notes,
+      status: reports.status,
+      flagged: reports.flagged,
+      submitted_at: reports.submitted_at,
+      viewed_at: reports.viewed_at,
+      reviewed_at: reports.reviewed_at,
+    })
+    .from(reports)
+    .where(and(eq(reports.id, reportId), eq(reports.patient_id, patientId)))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getReportResponsesForPatient(db: DbClient, reportId: string) {
+  // NEVER select internal_notes for patient-facing queries.
+  return db
+    .select({
+      id: reportResponses.id,
+      message: reportResponses.message,
+      responded_at: reportResponses.responded_at,
+    })
+    .from(reportResponses)
+    .where(eq(reportResponses.report_id, reportId))
+    .orderBy(reportResponses.responded_at);
+}
+
+// ─── Provider report queries ─────────────────────────────────────────────────────
+
+type InboxFilters = {
+  status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
+  patient_id?: string;
+  from?: string;
+  to?: string;
+  urgency?: 'routine' | 'concerning' | 'urgent';
+};
+
+type InboxRow = {
+  id: string;
+  patient_id: string;
+  urgency: string;
+  status: string;
+  pain_level: string | null;
+  description_preview: string;
+  flagged: boolean;
+  submitted_at: string;
+  patient_first_name: string;
+  patient_last_name: string;
+};
+
+function buildReportFilters(providerId: string, filters: InboxFilters) {
+  return sql`
+    r.provider_id = ${providerId}
+    ${filters.status ? sql`AND r.status = ${filters.status}` : sql``}
+    ${filters.patient_id ? sql`AND r.patient_id = ${filters.patient_id}` : sql``}
+    ${filters.from ? sql`AND r.submitted_at >= ${filters.from}::timestamptz` : sql``}
+    ${filters.to ? sql`AND r.submitted_at <= ${filters.to}::timestamptz` : sql``}
+    ${filters.urgency ? sql`AND r.urgency = ${filters.urgency}` : sql``}
+  `;
+}
+
+export async function listProviderReports(
+  db: DbClient,
+  providerId: string,
+  page: number,
+  limit: number,
+  filters: InboxFilters,
+) {
+  const offset = (page - 1) * limit;
+  const where = buildReportFilters(providerId, filters);
+
+  const result = await db.execute<InboxRow>(sql`
+    SELECT
+      r.id, r.patient_id, r.urgency, r.status,
+      r.pain_level::text AS pain_level,
+      LEFT(r.description, 200) AS description_preview, r.flagged,
+      r.submitted_at::text AS submitted_at,
+      p.first_name AS patient_first_name,
+      p.last_name AS patient_last_name
+    FROM reports r
+    JOIN profiles p ON p.user_id = r.patient_id
+    WHERE ${where}
+    ORDER BY
+      CASE r.urgency WHEN 'urgent' THEN 1 WHEN 'concerning' THEN 2 ELSE 3 END,
+      r.submitted_at DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `);
+
+  const rows: InboxRow[] = Array.isArray(result) ? result : result.rows ?? [];
+  return rows.map((r) => ({
+    ...r,
+    pain_level: r.pain_level ? parseInt(r.pain_level, 10) : null,
+  }));
+}
+
+export async function countProviderReports(
+  db: DbClient,
+  providerId: string,
+  filters: InboxFilters,
+) {
+  type CountRow = { total: string };
+  const where = buildReportFilters(providerId, filters);
+  const result = await db.execute<CountRow>(sql`
+    SELECT COUNT(*)::text AS total FROM reports r WHERE ${where}
+  `);
+  const rows: CountRow[] = Array.isArray(result) ? result : result.rows ?? [];
+  return parseInt(rows[0]?.total ?? '0', 10);
+}
+
+export async function getReportForProvider(db: DbClient, reportId: string, providerId: string) {
+  const [row] = await db
+    .select()
+    .from(reports)
+    .where(and(eq(reports.id, reportId), eq(reports.provider_id, providerId)))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getReportResponsesForProvider(db: DbClient, reportId: string) {
+  // Provider sees internal_notes.
+  return db
+    .select()
+    .from(reportResponses)
+    .where(eq(reportResponses.report_id, reportId))
+    .orderBy(reportResponses.responded_at);
+}
+
+export async function markReportViewed(db: DbClient, reportId: string) {
+  await db
+    .update(reports)
+    .set({ status: 'viewed', viewed_at: sql`NOW()` })
+    .where(and(eq(reports.id, reportId), eq(reports.status, 'submitted')));
+}
+
+export async function markReportReviewed(db: DbClient, reportId: string) {
+  await db
+    .update(reports)
+    .set({ status: 'reviewed', reviewed_at: sql`NOW()` })
+    .where(eq(reports.id, reportId));
+}
+
+export async function insertReportResponse(
+  db: DbClient,
+  reportId: string,
+  providerId: string,
+  message: string,
+  internalNotes: string | null,
+) {
+  return db.transaction(async (tx) => {
+    const [response] = await tx
+      .insert(reportResponses)
+      .values({
+        report_id: reportId,
+        provider_id: providerId,
+        message,
+        internal_notes: internalNotes,
+      })
+      .returning();
+
+    await tx
+      .update(reports)
+      .set({ status: 'responded' })
+      .where(eq(reports.id, reportId));
+
+    return response;
+  });
+}
+
+export async function toggleReportFlag(db: DbClient, reportId: string, providerId: string) {
+  const [row] = await db
+    .update(reports)
+    .set({ flagged: sql`NOT flagged` })
+    .where(and(eq(reports.id, reportId), eq(reports.provider_id, providerId)))
+    .returning({ id: reports.id, flagged: reports.flagged });
+  return row ?? null;
+}

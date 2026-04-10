@@ -1,0 +1,128 @@
+version: '3.9'
+
+# TMJConnect Pilot — Production-like stack: api + postgres + nginx
+# Usage:
+#   docker compose --env-file .env up -d
+#   docker compose logs -f api
+
+services:
+
+  # ─── PostgreSQL 16 ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tmjconnect
+      POSTGRES_USER: tmjconnect
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    # Do not expose port to host in production. API connects via internal network.
+    # For local dev access: use docker-compose.dev.yml which exposes 5432.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tmjconnect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ─── TMJConnect API ─────────────────────────────────────────────────────────────
+  api:
+    image: ghcr.io/your-org/tmjconnect-api:latest
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://tmjconnect:${POSTGRES_PASSWORD}@postgres:5432/tmjconnect?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      STORAGE_DRIVER: local
+      UPLOAD_DIR: /data/uploads
+      APP_URL: ${APP_URL}
+      API_URL: ${API_URL}
+      SENTRY_DSN: ${SENTRY_DSN}
+      LOG_LEVEL: info
+    volumes:
+      - uploads_data:/data/uploads
+    networks:
+      - internal
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ─── Nginx (reverse proxy + SSL + static files) ─────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - uploads_data:/data/uploads:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    networks:
+      - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ─── Certbot (Let's Encrypt SSL certificate management) ─────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Run manually to obtain/renew certs:
+    #   docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d api.tmjconnect.com
+    # Then reload nginx: docker compose exec nginx nginx -s reload
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
+  certbot_certs:
+    driver: local
+  certbot_www:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge

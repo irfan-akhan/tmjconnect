@@ -1,0 +1,45 @@
+version: '3.9'
+
+# TMJConnect Development — PostgreSQL only.
+# API runs locally via: npm run dev:api
+# Usage: docker compose -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tmjconnect
+      POSTGRES_USER: tmjconnect
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tmjconnect"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Separate test database — used by Jest integration tests.
+  postgres_test:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tmjconnect_test
+      POSTGRES_USER: tmjconnect
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tmjconnect"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
+  postgres_test_data:

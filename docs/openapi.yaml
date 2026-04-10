@@ -1,0 +1,1960 @@
+openapi: 3.1.0
+info:
+  title: TMJConnect API
+  version: 1.0.0
+  description: |
+    HIPAA-compliant orofacial pain management platform API.
+    Supports patients, providers, and admin roles.
+  contact:
+    name: TMJConnect Engineering
+servers:
+  - url: /api/v1
+    description: API v1
+
+tags:
+  - name: Auth
+    description: Registration, login, MFA, password reset, token management
+  - name: Patients
+    description: Patient profile, sessions, notification preferences
+  - name: Symptoms
+    description: Symptom log CRUD, calendar view
+  - name: Exercises
+    description: Patient exercise assignments and completions
+  - name: Notifications
+    description: In-app notification list, mark read
+  - name: Reminders
+    description: Scheduled push reminder CRUD
+  - name: Providers
+    description: Provider profile, patient dashboard, exercise library, assignments
+  - name: Reports
+    description: Patient report submission, provider inbox, responses
+  - name: Linking
+    description: Patient-provider linking codes, acceptance, disconnection
+  - name: Uploads
+    description: File uploads (video, avatar, report photos)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ─── Error ──────────────────────────────────────────────────────────────────
+    Error:
+      description: Standard error response envelope
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+
+    ErrorBody:
+      description: Error detail object
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: Human-readable error message
+          example: Invalid request body
+        details:
+          type: array
+          description: Per-field validation errors (present on VALIDATION_ERROR)
+          items:
+            $ref: '#/components/schemas/ValidationDetail'
+
+    ValidationDetail:
+      description: Single field validation error
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: JSON path of the invalid field
+          example: email
+        message:
+          type: string
+          description: Reason the field is invalid
+          example: Invalid email
+
+    # ─── Auth ──────────────────────────────────────────────────────────────────
+    TokenPair:
+      description: JWT access token (15min) and refresh token (7 days)
+      type: object
+      required: [access_token, refresh_token]
+      properties:
+        access_token:
+          type: string
+          description: Short-lived JWT for API access (15min TTL)
+        refresh_token:
+          type: string
+          description: Long-lived token for obtaining new access tokens (7 day TTL)
+
+    MfaRequired:
+      description: Returned when login requires MFA verification
+      type: object
+      required: [mfa_required, mfa_token]
+      properties:
+        mfa_required:
+          type: boolean
+          enum: [true]
+        mfa_token:
+          type: string
+          description: Temporary token for MFA verification (5min TTL). Pass to /auth/mfa/verify.
+
+    MfaSetupRequired:
+      description: Returned when provider verifies email but has not set up MFA yet
+      type: object
+      required: [mfa_setup_required, setup_token]
+      properties:
+        mfa_setup_required:
+          type: boolean
+          enum: [true]
+        setup_token:
+          type: string
+          description: Temporary token for MFA setup (10min TTL). Pass to /auth/mfa/setup.
+
+    MfaSetupResult:
+      description: Returned after successful MFA setup
+      type: object
+      required: [message, backup_codes, access_token, refresh_token]
+      properties:
+        message:
+          type: string
+          example: MFA setup complete. Save these backup codes — they will not be shown again.
+        backup_codes:
+          type: array
+          description: 10 one-time backup codes. Will not be shown again.
+          items:
+            type: string
+          minItems: 10
+          maxItems: 10
+        access_token:
+          type: string
+          description: JWT access token (provider is logged in immediately)
+        refresh_token:
+          type: string
+          description: Refresh token
+
+    MfaSetupInit:
+      description: TOTP setup data for authenticator app
+      type: object
+      required: [secret, qr_uri]
+      properties:
+        secret:
+          type: string
+          description: Base32-encoded TOTP secret (for manual entry)
+        qr_uri:
+          type: string
+          description: otpauth:// URI for QR code scanning
+
+    # ─── Users & Profiles ──────────────────────────────────────────────────────
+    PatientProfile:
+      description: Patient user profile with demographic information
+      type: object
+      required: [id, email, role, is_active, created_at, first_name, last_name, timezone]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        phone: { type: [string, "null"] }
+        role: { type: string, enum: [patient] }
+        is_active: { type: boolean }
+        mfa_enabled: { type: boolean, description: "Whether patient has opted into MFA" }
+        created_at: { type: string, format: date-time }
+        first_name: { type: string }
+        last_name: { type: string }
+        date_of_birth: { type: [string, "null"], format: date }
+        gender: { type: [string, "null"] }
+        avatar_url: { type: [string, "null"], format: uri }
+        city: { type: [string, "null"] }
+        state: { type: [string, "null"] }
+        timezone: { type: string, description: "IANA timezone (e.g. America/New_York)" }
+
+    ProviderProfile:
+      description: Provider user profile with professional details
+      type: object
+      required: [id, email, role, first_name, last_name, timezone, license_number, license_type, specialty, clinic_name]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, enum: [provider] }
+        first_name: { type: string }
+        last_name: { type: string }
+        avatar_url: { type: [string, "null"], format: uri }
+        city: { type: [string, "null"] }
+        state: { type: [string, "null"] }
+        timezone: { type: string, description: "IANA timezone" }
+        license_number: { type: string }
+        license_type: { type: string }
+        specialty: { type: string }
+        clinic_name: { type: string }
+        credentials:
+          description: Professional titles (e.g. ['DDS', 'CCMC'])
+          oneOf:
+            - type: array
+              items: { type: string, maxLength: 100 }
+              maxItems: 20
+            - type: "null"
+
+    NotificationPreferences:
+      description: Per-user notification channel and frequency preferences
+      type: object
+      required: [user_id, exercise_reminders, symptom_checkin, provider_messages, report_updates, tips_updates, email_digest]
+      properties:
+        user_id: { type: string, format: uuid }
+        exercise_reminders: { type: boolean, description: "Push/email for exercise reminders" }
+        symptom_checkin: { type: boolean, description: "Push for symptom check-in reminders" }
+        provider_messages: { type: boolean, description: "Push/email for provider messages" }
+        report_updates: { type: boolean, description: "Push/email for report status changes" }
+        tips_updates: { type: boolean, description: "Push for tips and wellness updates" }
+        email_digest:
+          type: string
+          enum: [instant, daily, weekly, off]
+          description: "Email delivery frequency"
+
+    Session:
+      description: Active login session
+      type: object
+      required: [id, device_info, last_active, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        device_info: { type: string, description: "User-Agent string (truncated to 500 chars)" }
+        ip_address: { type: [string, "null"], description: "Client IP address" }
+        last_active: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    # ─── Symptoms ──────────────────────────────────────────────────────────────
+    BodyArea:
+      description: Affected body area with optional side
+      type: object
+      required: [area]
+      properties:
+        area:
+          type: string
+          description: "Body region (e.g. jaw, temple, neck, ear)"
+          example: jaw
+        side:
+          type: [string, "null"]
+          description: "Laterality if applicable"
+          enum: [left, right, both, null]
+          example: left
+
+    SymptomLog:
+      description: Daily patient symptom entry (one per calendar day)
+      type: object
+      required: [id, patient_id, pain_level, pain_types, body_areas, triggers, logged_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        pain_level:
+          type: integer
+          minimum: 0
+          maximum: 10
+          description: "Self-reported pain scale"
+        pain_types:
+          type: array
+          description: "Types of pain experienced (e.g. aching, sharp, throbbing)"
+          items: { type: string }
+        body_areas:
+          type: array
+          description: "Affected body areas"
+          items:
+            $ref: '#/components/schemas/BodyArea'
+        duration_minutes:
+          type: [integer, "null"]
+          description: "Duration of symptoms in minutes"
+        triggers:
+          type: array
+          description: "What triggered or worsened symptoms (e.g. chewing, stress, cold)"
+          items: { type: string }
+        notes:
+          type: [string, "null"]
+          description: "Free-text patient notes (DOMPurify sanitised)"
+        logged_at: { type: string, format: date-time, description: "When symptoms occurred (client-provided)" }
+        created_at: { type: string, format: date-time, description: "Server-set creation time (immutable)" }
+        updated_at: { type: string, format: date-time, description: "Last edit time (24h edit window)" }
+
+    CalendarDay:
+      description: Aggregated symptom data for a single calendar day
+      type: object
+      required: [day, avg_pain, count]
+      properties:
+        day: { type: string, format: date, description: "Calendar date (YYYY-MM-DD)" }
+        avg_pain: { type: number, description: "Average pain level for the day (0.0–10.0)" }
+        count: { type: integer, description: "Number of symptom logs for the day" }
+
+    # ─── Exercises ─────────────────────────────────────────────────────────────
+    Exercise:
+      description: Exercise in a provider's video library
+      type: object
+      required: [id, provider_id, title, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        provider_id: { type: string, format: uuid }
+        title: { type: string, maxLength: 255 }
+        description: { type: [string, "null"], description: "Exercise description (sanitised)" }
+        duration_seconds: { type: [integer, "null"], description: "Expected duration" }
+        category: { type: [string, "null"], description: "Exercise category for filtering" }
+        instructions: { type: [string, "null"], description: "Step-by-step instructions (sanitised)" }
+        video_url: { type: [string, "null"], format: uri, description: "Uploaded video URL" }
+        thumbnail_url: { type: [string, "null"], format: uri, description: "Video thumbnail URL" }
+        created_at: { type: string, format: date-time }
+
+    ExerciseAssignment:
+      description: Exercise assigned to a patient by their provider
+      type: object
+      required: [assignment_id, exercise_id, title, frequency, sets, status, assigned_at]
+      properties:
+        assignment_id: { type: string, format: uuid }
+        exercise_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: [string, "null"] }
+        duration_seconds: { type: [integer, "null"] }
+        category: { type: [string, "null"] }
+        instructions: { type: [string, "null"] }
+        video_url: { type: [string, "null"], format: uri }
+        thumbnail_url: { type: [string, "null"], format: uri }
+        frequency: { type: string, description: "e.g. daily, 3x weekly" }
+        sets: { type: integer, minimum: 1 }
+        status: { type: string, enum: [active, paused, completed] }
+        assigned_at: { type: string, format: date-time }
+
+    ExerciseCompletion:
+      description: Record of a patient completing an exercise assignment for the day
+      type: object
+      required: [id, assignment_id, patient_id, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        assignment_id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        completed_at: { type: string, format: date-time }
+
+    # ─── Notifications & Reminders ─────────────────────────────────────────────
+    Notification:
+      description: In-app notification record
+      type: object
+      required: [id, type, title, body, read, data, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          description: "Notification type (determines channel routing)"
+          enum: [exercise_reminder, symptom_checkin, provider_message, report_submitted, report_urgent, report_reviewed, exercise_assigned, link_accepted, welcome, password_reset, mfa_code, new_device_login, weekly_summary, account_locked, streak_milestone]
+        title: { type: string }
+        body: { type: string }
+        read: { type: boolean }
+        data:
+          $ref: '#/components/schemas/NotificationData'
+        created_at: { type: string, format: date-time }
+
+    NotificationData:
+      description: Extra payload for deep linking and context
+      type: object
+      properties:
+        reportId: { type: string, format: uuid, description: "For report-related notifications" }
+        reminderId: { type: string, format: uuid, description: "For reminder notifications" }
+        patientId: { type: string, format: uuid, description: "For provider-facing notifications" }
+        providerId: { type: string, format: uuid, description: "For patient-facing link notifications" }
+        urgency: { type: string, enum: [routine, concerning, urgent], description: "Report urgency level" }
+        action: { type: string, description: "Sub-action (e.g. 'responded')" }
+      additionalProperties: true
+
+    Reminder:
+      description: Scheduled push reminder configured by the user
+      type: object
+      required: [id, type, time, days, enabled, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [exercise, symptom] }
+        time: { type: string, pattern: "^\\d{2}:\\d{2}$", example: "09:00", description: "Local time (HH:MM)" }
+        days:
+          type: array
+          description: "Days of week to fire"
+          items:
+            type: string
+            enum: [mon, tue, wed, thu, fri, sat, sun]
+        enabled: { type: boolean }
+        next_fire_at: { type: [string, "null"], format: date-time, description: "Pre-computed next UTC fire time" }
+        created_at: { type: string, format: date-time }
+
+    # ─── Reports ───────────────────────────────────────────────────────────────
+    Report:
+      description: Patient-to-provider health report
+      type: object
+      required: [id, patient_id, urgency, description, status, flagged, submitted_at]
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        provider_id: { type: [string, "null"], format: uuid, description: "NULL if provider deleted" }
+        urgency: { type: string, enum: [routine, concerning, urgent] }
+        pain_level: { type: [integer, "null"], minimum: 0, maximum: 10 }
+        description: { type: string, description: "Patient's symptom narrative (sanitised)" }
+        photo_url: { type: [string, "null"], format: uri }
+        period_start: { type: [string, "null"], format: date-time }
+        period_end: { type: [string, "null"], format: date-time }
+        summary_data:
+          $ref: '#/components/schemas/ReportSummaryData'
+        patient_notes: { type: [string, "null"], description: "Additional patient notes (sanitised)" }
+        status: { type: string, enum: [submitted, viewed, reviewed, responded] }
+        flagged: { type: boolean }
+        submitted_at: { type: string, format: date-time }
+        viewed_at: { type: [string, "null"], format: date-time }
+        reviewed_at: { type: [string, "null"], format: date-time }
+
+    ReportSummaryData:
+      description: Auto-generated stats snapshot at time of report submission
+      type: object
+      properties:
+        avg_pain_7d: { type: [number, "null"], description: "7-day average pain level" }
+        symptom_count_7d: { type: [integer, "null"], description: "Symptom logs in last 7 days" }
+        exercises_completed_7d: { type: [integer, "null"], description: "Exercises completed in last 7 days" }
+      additionalProperties: true
+
+    ReportInboxItem:
+      description: Summary row in the provider report inbox (description truncated to 200 chars)
+      type: object
+      required: [id, patient_id, urgency, status, flagged, submitted_at, patient_first_name, patient_last_name]
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        urgency: { type: string, enum: [routine, concerning, urgent] }
+        status: { type: string, enum: [submitted, viewed, reviewed, responded] }
+        pain_level: { type: [integer, "null"] }
+        description_preview: { type: string, maxLength: 200, description: "First 200 chars of description" }
+        flagged: { type: boolean }
+        submitted_at: { type: string, format: date-time }
+        patient_first_name: { type: string }
+        patient_last_name: { type: string }
+
+    ReportResponse:
+      description: Provider text response to a report
+      type: object
+      required: [id, message, responded_at]
+      properties:
+        id: { type: string, format: uuid }
+        message: { type: string, description: "Response visible to patient (sanitised)" }
+        internal_notes:
+          type: [string, "null"]
+          description: "Provider-only notes. NEVER returned in patient-facing responses."
+        responded_at: { type: string, format: date-time }
+
+    ReportDetail:
+      description: Full report with provider responses
+      type: object
+      required: [report, responses]
+      properties:
+        report:
+          $ref: '#/components/schemas/Report'
+        responses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportResponse'
+
+    # ─── Linking ───────────────────────────────────────────────────────────────
+    LinkingCode:
+      description: Provider-generated 6-character patient invite code (7-day expiry)
+      type: object
+      required: [id, code, provider_id, status, expires_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, minLength: 6, maxLength: 6, description: "6-char alphanumeric code" }
+        provider_id: { type: string, format: uuid }
+        patient_id: { type: [string, "null"], format: uuid, description: "Set when patient accepts" }
+        status: { type: string, enum: [pending, connected, expired] }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    Link:
+      description: Active patient-provider connection
+      type: object
+      required: [link_id, first_name, last_name, linked_at]
+      properties:
+        link_id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid, description: "Present in provider's view" }
+        provider_id: { type: string, format: uuid, description: "Present in patient's view" }
+        first_name: { type: string, description: "Name of the other party" }
+        last_name: { type: string }
+        linked_at: { type: string, format: date-time }
+
+    # ─── Uploads ───────────────────────────────────────────────────────────────
+    UploadResult:
+      description: Result of a file upload operation
+      type: object
+      required: [key, url]
+      properties:
+        key: { type: string, description: "Storage key (e.g. videos/uuid.mp4)" }
+        url: { type: string, format: uri, description: "Public/signed URL to access the file" }
+
+    # ─── Pagination ────────────────────────────────────────────────────────────
+    PageMeta:
+      description: Offset-based pagination metadata
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page: { type: integer, description: "Current page number" }
+        limit: { type: integer, description: "Items per page" }
+        total: { type: integer, description: "Total matching items" }
+        totalPages: { type: integer, description: "Total pages" }
+
+    CursorMeta:
+      description: Cursor-based pagination metadata
+      type: object
+      required: [hasMore]
+      properties:
+        nextCursor: { type: [string, "null"], description: "Pass as cursor param for next page" }
+        hasMore: { type: boolean }
+
+    # ─── Provider Dashboard ────────────────────────────────────────────────────
+    PatientDashboardItem:
+      description: Patient summary row in provider dashboard with 7-day stats
+      type: object
+      required: [patient_id, first_name, last_name, linked_at, exercises_completed_7d]
+      properties:
+        patient_id: { type: string, format: uuid }
+        first_name: { type: string }
+        last_name: { type: string }
+        avatar_url: { type: [string, "null"], format: uri }
+        linked_at: { type: string, format: date-time }
+        last_symptom_at: { type: [string, "null"], format: date-time, description: "Most recent symptom log" }
+        avg_pain_7d: { type: [number, "null"], description: "7-day average pain level (0.0–10.0)" }
+        exercises_completed_7d: { type: integer, description: "Exercises completed in last 7 days" }
+
+    # ─── Admin ─────────────────────────────────────────────────────────────────
+    AdminStats:
+      description: Admin dashboard statistics
+      type: object
+      required: [total_users, active_users, patients, providers, reports_today]
+      properties:
+        total_users: { type: integer }
+        active_users: { type: integer }
+        patients: { type: integer }
+        providers: { type: integer }
+        reports_today: { type: integer }
+        avg_response_hours: { type: [number, "null"], description: "30-day avg report response time in hours" }
+
+    AdminUserListItem:
+      description: User row in admin user list
+      type: object
+      required: [id, email, role, is_active, email_verified, mfa_enabled, first_name, last_name, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, enum: [patient, provider, admin] }
+        is_active: { type: boolean }
+        email_verified: { type: boolean }
+        mfa_enabled: { type: boolean }
+        first_name: { type: string }
+        last_name: { type: string }
+        created_at: { type: string, format: date-time }
+
+    AdminUserDetail:
+      description: Full user detail with recent audit logs and login events
+      type: object
+      required: [user, recent_audit_logs, recent_login_events]
+      properties:
+        user:
+          allOf:
+            - $ref: '#/components/schemas/AdminUserListItem'
+            - type: object
+              properties:
+                phone: { type: [string, "null"] }
+                date_of_birth: { type: [string, "null"], format: date }
+                gender: { type: [string, "null"] }
+                city: { type: [string, "null"] }
+                state: { type: [string, "null"] }
+                timezone: { type: [string, "null"] }
+                updated_at: { type: [string, "null"], format: date-time }
+                deleted_at: { type: [string, "null"], format: date-time }
+        recent_audit_logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        recent_login_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoginEvent'
+
+    AuditLog:
+      description: HIPAA audit trail entry (append-only, never deleted)
+      type: object
+      required: [id, action, metadata, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: [string, "null"], format: uuid, description: "NULL after user hard-delete" }
+        action: { type: string, description: "e.g. auth.login, report_submitted, admin_user_updated" }
+        resource_type: { type: [string, "null"], description: "e.g. user, report, symptom_log" }
+        resource_id: { type: [string, "null"], format: uuid }
+        ip_address: { type: [string, "null"] }
+        user_agent: { type: [string, "null"] }
+        metadata:
+          type: object
+          description: "Contextual data (IDs and aggregates only, never raw PHI)"
+          properties:
+            requestId: { type: string, format: uuid }
+            method: { type: string }
+            path: { type: string }
+            statusCode: { type: integer }
+          additionalProperties: true
+        created_at: { type: string, format: date-time }
+
+    LoginEvent:
+      description: Login attempt record for security monitoring
+      type: object
+      required: [id, email, success, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: [string, "null"], format: uuid }
+        email: { type: string, format: email }
+        success: { type: boolean }
+        ip_address: { type: [string, "null"] }
+        device_info: { type: [string, "null"] }
+        failure_reason:
+          type: [string, "null"]
+          description: "e.g. invalid_password, account_locked, email_not_verified"
+        created_at: { type: string, format: date-time }
+
+paths:
+  # ──────────────────────────── AUTH — PATIENT FLOW ─────────────────────────────
+  /auth/patient/register:
+    post:
+      tags: [Auth]
+      summary: Register a new patient account
+      description: "Flow: register → verify-email → tokens (no MFA)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, description: "Min 8 chars, 1 digit, 1 special char" }
+                first_name: { type: string }
+                last_name: { type: string }
+                timezone: { type: string }
+      responses:
+        '201': { description: Account created. Check email for 6-digit verification code. }
+        '409': { description: Email already registered. }
+
+  /auth/patient/login:
+    post:
+      tags: [Auth]
+      summary: Patient login
+      description: |
+        Returns tokens directly if MFA is not enabled.
+        If patient has opted into MFA, returns mfa_required + mfa_token instead.
+        Use /auth/mfa/verify to complete login in that case.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Tokens (no MFA) or mfa_required (MFA enabled)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TokenPair'
+                  - $ref: '#/components/schemas/MfaRequired'
+        '401': { description: Invalid credentials }
+        '403': { description: "WRONG_PORTAL (provider trying patient login), VERIFY_EMAIL, or ACCOUNT_INACTIVE" }
+        '429': { description: Account locked after 5 failed attempts }
+
+  # ──────────────────────────── AUTH — PATIENT OPTIONAL MFA ─────────────────────
+  /auth/patient/mfa/init:
+    post:
+      tags: [Auth]
+      summary: Initiate MFA setup for patient (opt-in)
+      description: |
+        Returns a setup_token. Use it with the existing MFA endpoints:
+        1. POST /auth/mfa/setup (Bearer: setup_token) → QR code + secret
+        2. POST /auth/mfa/verify-setup (Bearer: setup_token + TOTP code) → backup codes + tokens
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Setup token for MFA enrollment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setup_token: { type: string, description: "Temporary token for MFA setup (10min TTL)" }
+        '403': { description: Providers must use the provider MFA flow }
+        '409': { description: MFA is already enabled }
+
+  /auth/patient/mfa:
+    delete:
+      tags: [Auth]
+      summary: Disable MFA for patient (opt-out)
+      description: |
+        Requires current password for verification. Clears TOTP secret,
+        disables MFA flag, and deletes all backup codes. Providers cannot
+        disable MFA — this endpoint returns 403 for non-patient roles.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, description: "Current account password for confirmation" }
+      responses:
+        '200': { description: MFA disabled successfully }
+        '401': { description: Incorrect password }
+        '403': { description: Providers cannot disable MFA }
+
+  # ──────────────────────────── AUTH — PROVIDER FLOW ────────────────────────────
+  /auth/provider/register:
+    post:
+      tags: [Auth]
+      summary: Register a new provider account
+      description: "Flow: register → verify-email → mfa/setup → mfa/verify-setup → tokens + backup codes"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name, license_number, license_type, specialty, clinic_name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, description: "Min 8 chars, 1 digit, 1 special char" }
+                first_name: { type: string }
+                last_name: { type: string }
+                timezone: { type: string }
+                license_number: { type: string }
+                license_type: { type: string }
+                specialty: { type: string }
+                clinic_name: { type: string }
+                credentials: { type: array, items: { type: string }, description: "Professional titles (e.g. ['DDS', 'CCMC'])" }
+      responses:
+        '201': { description: Account created. Check email for 6-digit verification code. }
+        '409': { description: Email already registered. }
+
+  /auth/provider/login:
+    post:
+      tags: [Auth]
+      summary: Provider login (always returns mfa_token, MFA is mandatory)
+      description: |
+        Providers must complete MFA on every login. Returns an mfa_token
+        which must be passed to /auth/mfa/verify with a TOTP, SMS, or backup code.
+        Returns 403 MFA_NOT_SETUP if the provider has not completed onboarding.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: MFA required — use mfa_token with /auth/mfa/verify
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaRequired'
+        '401': { description: Invalid credentials }
+        '403': { description: "WRONG_PORTAL (patient trying provider login), MFA_NOT_SETUP, VERIFY_EMAIL, or ACCOUNT_INACTIVE" }
+        '429': { description: Account locked after 5 failed attempts }
+
+  # ──────────────────────────── AUTH — MFA (PROVIDER ONLY) ──────────────────────
+  /auth/mfa/setup:
+    post:
+      tags: [Auth]
+      summary: Begin MFA setup (provider onboarding, after verify-email)
+      description: |
+        Called once during provider onboarding. Requires the setup_token
+        returned by /auth/verify-email in the Authorization header.
+        Returns the TOTP secret and QR URI for authenticator app setup.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: TOTP secret + QR URI returned for authenticator app }
+        '401': { description: Invalid or expired setup token }
+
+  /auth/mfa/verify-setup:
+    post:
+      tags: [Auth]
+      summary: Complete MFA setup with first TOTP code (issues tokens)
+      description: |
+        Verifies the provider's first TOTP code, enables MFA, generates 10 backup codes,
+        and issues access_token + refresh_token so the provider is logged in immediately.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, minLength: 6, maxLength: 6, description: "6-digit TOTP code from authenticator app" }
+      responses:
+        '200':
+          description: MFA enabled. Returns backup codes + tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  backup_codes: { type: array, items: { type: string }, description: "10 one-time backup codes. Will not be shown again." }
+                  access_token: { type: string, description: "JWT access token (15min)" }
+                  refresh_token: { type: string, description: "Refresh token (7 days)" }
+
+  /auth/mfa/verify:
+    post:
+      tags: [Auth]
+      summary: Verify MFA code to complete provider login
+      description: "Accepts TOTP code, SMS code, or one-time backup code."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mfa_token, code, type]
+              properties:
+                mfa_token: { type: string, description: "From /auth/provider/login response" }
+                code: { type: string, description: "6-digit TOTP/SMS or 10-char backup code" }
+                type: { type: string, enum: [totp, sms, backup] }
+      responses:
+        '200':
+          description: MFA verified — tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+
+  /auth/mfa/sms:
+    post:
+      tags: [Auth]
+      summary: Request SMS fallback MFA code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mfa_token]
+              properties:
+                mfa_token: { type: string }
+      responses:
+        '200': { description: SMS code sent }
+
+  # ──────────────────────────── AUTH — SHARED ENDPOINTS ──────────────────────────
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify email with 6-digit code (both roles)
+      description: |
+        Shared by both patient and provider registration flows.
+        - Patient: returns access_token + refresh_token (logged in immediately).
+        - Provider: returns mfa_setup_required + setup_token (must complete MFA setup).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, minLength: 6, maxLength: 6, description: "6-digit code from verification email" }
+      responses:
+        '200':
+          description: Patient gets tokens; provider gets setup_token for MFA onboarding
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TokenPair'
+                  - $ref: '#/components/schemas/MfaSetupRequired'
+        '400': { description: Invalid or expired code }
+        '429': { description: Too many incorrect attempts — code invalidated }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401': { description: Invalid or expired refresh token }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { description: Always 200 (never reveals if email exists) }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token from email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token: { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        '200': { description: Password reset. All sessions invalidated. }
+
+  /auth/resend-verify-email:
+    post:
+      tags: [Auth]
+      summary: Resend email verification code (rate limited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { description: Always 200. Rate limited to 1 per 2 minutes. }
+
+  /auth/logout:
+    delete:
+      tags: [Auth]
+      summary: Logout (delete current refresh token)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Logged out }
+
+  /auth/logout-all:
+    delete:
+      tags: [Auth]
+      summary: Logout from all devices
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: All sessions and tokens deleted }
+
+  /auth/change-password:
+    patch:
+      tags: [Auth]
+      summary: Change password (requires current password)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        '200': { description: Password changed }
+
+  /auth/fcm-token:
+    patch:
+      tags: [Auth]
+      summary: Update Firebase Cloud Messaging token
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fcm_token]
+              properties:
+                fcm_token: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: FCM token updated }
+
+  # ──────────────────────────── PATIENTS ────────────────────────────
+  /patients/me:
+    get:
+      tags: [Patients]
+      summary: Get current patient profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PatientProfile' }
+    patch:
+      tags: [Patients]
+      summary: Update patient profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name: { type: string }
+                last_name: { type: string }
+                date_of_birth: { type: [string, "null"], format: date }
+                gender: { type: [string, "null"] }
+                city: { type: [string, "null"] }
+                state: { type: [string, "null"] }
+                timezone: { type: string }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PatientProfile' }
+    delete:
+      tags: [Patients]
+      summary: Request account deletion (soft delete)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Account deletion requested }
+
+  /patients/me/sessions:
+    get:
+      tags: [Patients]
+      summary: List active sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Session' }
+
+  /patients/me/sessions/{sessionId}:
+    delete:
+      tags: [Patients]
+      summary: Revoke a session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Session revoked }
+
+  /patients/me/notification-preferences:
+    get:
+      tags: [Patients]
+      summary: Get notification preferences
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification preferences }
+    patch:
+      tags: [Patients]
+      summary: Update notification preferences
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                exercise_reminders: { type: boolean }
+                symptom_checkin: { type: boolean }
+                provider_messages: { type: boolean }
+                report_updates: { type: boolean }
+                tips_updates: { type: boolean }
+                email_digest: { type: string, enum: [instant, daily, weekly, off] }
+      responses:
+        '200': { description: Preferences updated }
+
+  # ──────────────────────────── SYMPTOMS ────────────────────────────
+  /symptoms:
+    post:
+      tags: [Symptoms]
+      summary: Create or upsert symptom log (one per day)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pain_level, pain_types, body_areas, triggers]
+              properties:
+                pain_level: { type: integer, minimum: 0, maximum: 10 }
+                pain_types: { type: array, items: { type: string } }
+                body_areas:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/BodyArea'
+                duration_minutes: { type: [integer, "null"] }
+                triggers: { type: array, items: { type: string } }
+                notes: { type: [string, "null"] }
+                logged_at: { type: string, format: date-time }
+      responses:
+        '201': { description: Log created }
+        '200': { description: Existing log updated (same calendar day) }
+    get:
+      tags: [Symptoms]
+      summary: List symptom logs (cursor paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SymptomLog' }
+                  meta: { $ref: '#/components/schemas/CursorMeta' }
+
+  /symptoms/calendar:
+    get:
+      tags: [Symptoms]
+      summary: Monthly calendar aggregation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema: { type: integer, minimum: 2020, maximum: 2100 }
+        - name: month
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 12 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CalendarDay' }
+
+  /symptoms/{id}:
+    get:
+      tags: [Symptoms]
+      summary: Get a single symptom log
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SymptomLog' }
+    patch:
+      tags: [Symptoms]
+      summary: Update a symptom log (within 24h edit window)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Log updated }
+        '400': { description: Edit window expired (>24h) }
+
+  # ──────────────────────────── EXERCISES ────────────────────────────
+  /exercises/assignments:
+    get:
+      tags: [Exercises]
+      summary: List active exercise assignments (patient)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ExerciseAssignment' }
+
+  /exercises/assignments/{assignmentId}/complete:
+    post:
+      tags: [Exercises]
+      summary: Mark an exercise assignment as completed for today
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: Completion recorded }
+        '200': { description: Already completed today }
+
+  # ──────────────────────────── NOTIFICATIONS ────────────────────────────
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications (cursor paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+                  meta: { $ref: '#/components/schemas/CursorMeta' }
+                  unread_count: { type: integer }
+
+  /notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: All notifications marked read }
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark a single notification as read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Notification' }
+
+  # ──────────────────────────── REMINDERS ────────────────────────────
+  /reminders:
+    get:
+      tags: [Reminders]
+      summary: List all reminders
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Reminder' }
+    post:
+      tags: [Reminders]
+      summary: Create a reminder
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, time, days]
+              properties:
+                type: { type: string, enum: [exercise, symptom] }
+                time: { type: string, pattern: "^\\d{2}:\\d{2}$", example: "09:00" }
+                days: { type: array, items: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] } }
+                enabled: { type: boolean, default: true }
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Reminder' }
+
+  /reminders/{id}:
+    patch:
+      tags: [Reminders]
+      summary: Update a reminder
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Reminder' }
+    delete:
+      tags: [Reminders]
+      summary: Delete a reminder
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Reminder deleted }
+
+  # ──────────────────────────── PROVIDERS ────────────────────────────
+  /providers/me:
+    get:
+      tags: [Providers]
+      summary: Get current provider profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ProviderProfile' }
+    patch:
+      tags: [Providers]
+      summary: Update provider profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ProviderProfile' }
+
+  /providers/patients:
+    get:
+      tags: [Providers]
+      summary: List linked patients with 7-day stats
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: search
+          in: query
+          schema: { type: string }
+          description: Search by first or last name
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PatientDashboardItem' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /providers/patients/{patientId}:
+    get:
+      tags: [Providers]
+      summary: Get linked patient detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Patient detail }
+        '403': { description: Patient not linked to provider }
+
+  /providers/patients/{patientId}/assignments:
+    get:
+      tags: [Providers]
+      summary: List a patient's exercise assignments
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ExerciseAssignment' }
+    post:
+      tags: [Providers]
+      summary: Assign an exercise to a patient
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exercise_id]
+              properties:
+                exercise_id: { type: string, format: uuid }
+                frequency: { type: string, default: daily }
+                sets: { type: integer, minimum: 1, default: 1 }
+      responses:
+        '201': { description: Assignment created }
+        '403': { description: Patient not linked }
+
+  /providers/assignments/{assignmentId}:
+    patch:
+      tags: [Providers]
+      summary: Update an exercise assignment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                frequency: { type: string }
+                sets: { type: integer, minimum: 1 }
+                status: { type: string, enum: [active, paused, completed] }
+      responses:
+        '200': { description: Assignment updated }
+    delete:
+      tags: [Providers]
+      summary: Delete an exercise assignment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Assignment deleted }
+
+  /providers/exercises:
+    get:
+      tags: [Providers]
+      summary: List provider's exercise library
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: category
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Exercise' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+    post:
+      tags: [Providers]
+      summary: Create an exercise in the library
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 255 }
+                description: { type: [string, "null"] }
+                duration_seconds: { type: [integer, "null"] }
+                category: { type: [string, "null"] }
+                instructions: { type: [string, "null"] }
+                video_url: { type: [string, "null"], format: uri }
+                thumbnail_url: { type: [string, "null"], format: uri }
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Exercise' }
+
+  /providers/exercises/{exerciseId}:
+    patch:
+      tags: [Providers]
+      summary: Update an exercise
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Exercise updated }
+    delete:
+      tags: [Providers]
+      summary: Delete an exercise
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Exercise deleted (cascades to assignments) }
+
+  # ──────────────────────────── REPORTS ────────────────────────────
+  /reports:
+    post:
+      tags: [Reports]
+      summary: Submit a health report to provider (patient)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string, maxLength: 64 }
+          description: Optional. Prevents duplicate submissions on retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_id, urgency, description]
+              properties:
+                provider_id: { type: string, format: uuid }
+                urgency: { type: string, enum: [routine, concerning, urgent] }
+                pain_level: { type: [integer, "null"], minimum: 0, maximum: 10 }
+                description: { type: string, maxLength: 10000 }
+                photo_url: { type: [string, "null"], format: uri }
+                period_start: { type: [string, "null"], format: date-time }
+                period_end: { type: [string, "null"], format: date-time }
+                patient_notes: { type: [string, "null"], maxLength: 5000 }
+      responses:
+        '201': { description: Report submitted. Provider notified. }
+        '200': { description: Idempotent replay (report already exists). }
+        '403': { description: Not linked to provider. }
+
+  /reports/inbox:
+    get:
+      tags: [Reports]
+      summary: Provider report inbox (sorted by urgency)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: status
+          in: query
+          schema: { type: string, enum: [submitted, viewed, reviewed, responded] }
+        - name: patient_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: urgency
+          in: query
+          schema: { type: string, enum: [routine, concerning, urgent] }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReportInboxItem' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /reports/{id}:
+    get:
+      tags: [Reports]
+      summary: Get report detail (both roles)
+      security: [{ bearerAuth: [] }]
+      description: |
+        Patient view: no internal_notes in responses.
+        Provider view: includes internal_notes, auto-marks report as viewed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      report: { $ref: '#/components/schemas/Report' }
+                      responses:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReportResponse' }
+
+  /reports/{id}/respond:
+    post:
+      tags: [Reports]
+      summary: Provider responds to a report
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 5000 }
+                internal_notes:
+                  type: [string, "null"]
+                  maxLength: 5000
+                  description: Provider-only notes. Never visible to patients.
+      responses:
+        '201': { description: Response created. Patient notified. }
+
+  /reports/{id}/review:
+    patch:
+      tags: [Reports]
+      summary: Mark report as reviewed (provider)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Report marked as reviewed. Patient notified. }
+
+  /reports/{id}/flag:
+    patch:
+      tags: [Reports]
+      summary: Toggle report flag (provider)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Flag toggled }
+
+  # ──────────────────────────── LINKING ────────────────────────────
+  /linking/links:
+    get:
+      tags: [Linking]
+      summary: List active links (both roles)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Link' }
+
+  /linking/links/{linkId}:
+    delete:
+      tags: [Linking]
+      summary: Disconnect a link (either party)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: linkId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Link disconnected }
+
+  /linking/codes:
+    post:
+      tags: [Linking]
+      summary: Generate a linking code (provider)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/LinkingCode' }
+    get:
+      tags: [Linking]
+      summary: List generated codes (provider)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/LinkingCode' }
+
+  /linking/codes/{codeId}/invite:
+    post:
+      tags: [Linking]
+      summary: Send email invite with linking code (provider)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: codeId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [patient_email]
+              properties:
+                patient_email: { type: string, format: email }
+                patient_name: { type: string, maxLength: 200 }
+      responses:
+        '202': { description: Invitation email queued }
+
+  /linking/accept:
+    post:
+      tags: [Linking]
+      summary: Accept a linking code (patient)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, minLength: 6, maxLength: 6 }
+      responses:
+        '201': { description: Link created. Both parties notified. }
+        '404': { description: Invalid or expired code }
+        '409': { description: Already linked to this provider }
+        '410': { description: Code expired }
+
+  # ──────────────────────────── UPLOADS ────────────────────────────
+  /uploads/video:
+    post:
+      tags: [Uploads]
+      summary: Upload exercise video (provider only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "Max 100MB. Allowed: video/mp4, video/quicktime. Magic bytes validated."
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadResult' }
+
+  /uploads/avatar:
+    post:
+      tags: [Uploads]
+      summary: Upload avatar image (any authenticated user)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "Max 5MB. Allowed: image/jpeg, image/png. Magic bytes validated."
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadResult' }
+
+  /uploads/report-photo:
+    post:
+      tags: [Uploads]
+      summary: Upload report photo (patient)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "Max 10MB. Allowed: image/jpeg, image/png. Magic bytes validated."
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadResult' }

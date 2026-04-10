@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Drizzle generated (keep migrations, ignore meta snapshots in .gitignore if desired)
+# drizzle/migrations/  ← do NOT ignore — migrations must be committed
+drizzle/meta/          # Drizzle internal snapshot files (not needed in repo)
+
+# Uploads (pilot: local disk storage)
+apps/api/uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Firebase service account (contains private key — never commit)
+firebase-service-account.json
+*service-account*.json
