@@ -5,6 +5,7 @@ import request from 'supertest';
 import type express from 'express';
 import { eq, isNull, and } from 'drizzle-orm';
 import { buildTestApp, bearerFor } from '../helpers/testApp';
+import { expectAuditEntry } from '../helpers/auditAssertions';
 import {
   createTestPatient,
   createTestProvider,
@@ -101,6 +102,23 @@ describe('Linking Routes', () => {
         .send({ patient_email: 'invitee@test.com', patient_name: 'Inv' });
       expect(res.status).toBe(202);
       expect(sentEmails.some((e) => e.to === 'invitee@test.com' && e.type === 'emailInvite')).toBe(true);
+    });
+
+    it('writes an audit row when an invite is sent (HIPAA — track outbound PII)', async () => {
+      const create = await request(app)
+        .post(`${API_PREFIX}/linking/codes`)
+        .set('Authorization', providerAuth);
+      const code = create.body.data.code;
+
+      await request(app)
+        .post(`${API_PREFIX}/linking/codes/${code}/invite`)
+        .set('Authorization', providerAuth)
+        .send({ patient_email: 'auditme@test.com', patient_name: 'AuditTest' });
+      await expectAuditEntry(container.db, {
+        action: 'linking_invite_sent',
+        userId: provider.id,
+        resourceType: 'linking_code',
+      });
     });
   });
 

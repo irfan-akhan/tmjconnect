@@ -5,6 +5,7 @@ import request from 'supertest';
 import type express from 'express';
 import { eq } from 'drizzle-orm';
 import { buildTestApp, bearerFor } from '../helpers/testApp';
+import { expectAuditEntry } from '../helpers/auditAssertions';
 import {
   createTestPatient,
   createTestProvider,
@@ -168,6 +169,15 @@ describe('Reports Routes', () => {
       expect(res.body.data.length).toBe(1);
       expect(res.body.data[0].urgency).toBe('urgent');
     });
+
+    it('writes an audit row when a provider opens the inbox (HIPAA)', async () => {
+      await request(app).get(`${API_PREFIX}/reports/inbox`).set('Authorization', providerAuth);
+      await expectAuditEntry(container.db, {
+        action: 'provider_viewed_report_inbox',
+        userId: provider.id,
+        resourceType: 'report',
+      });
+    });
   });
 
   // ─── Get single report ───────────────────────────────────────────────────────
@@ -196,6 +206,18 @@ describe('Reports Routes', () => {
         .set('Authorization', patientAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.report.patient_notes).toBe('private patient notes');
+    });
+
+    it('writes an audit row when a report is viewed (HIPAA)', async () => {
+      await request(app)
+        .get(`${API_PREFIX}/reports/${reportId}`)
+        .set('Authorization', providerAuth);
+      const entry = await expectAuditEntry(container.db, {
+        action: 'report_viewed',
+        userId: provider.id,
+        resourceType: 'report',
+      });
+      expect(entry.user_id).toBe(provider.id);
     });
 
     it('does not leak internal_notes to the patient', async () => {

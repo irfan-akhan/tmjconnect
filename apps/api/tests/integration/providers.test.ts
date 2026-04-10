@@ -5,6 +5,7 @@ import request from 'supertest';
 import type express from 'express';
 import { eq } from 'drizzle-orm';
 import { buildTestApp, bearerFor } from '../helpers/testApp';
+import { expectAuditEntry } from '../helpers/auditAssertions';
 import {
   createTestPatient,
   createTestProvider,
@@ -136,6 +137,30 @@ describe('Provider Routes', () => {
         .set('Authorization', auth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(patient.id);
+    });
+
+    it('writes an audit row whenever a provider views patient detail (HIPAA)', async () => {
+      await linkPatient(provider.id, patient.id);
+      await request(app)
+        .get(`${API_PREFIX}/providers/patients/${patient.id}`)
+        .set('Authorization', auth);
+      const entry = await expectAuditEntry(container.db, {
+        action: 'provider_viewed_patient_detail',
+        userId: provider.id,
+        resourceType: 'user',
+      });
+      expect(entry.user_id).toBe(provider.id);
+    });
+
+    it('writes an audit row when a provider lists their patients (HIPAA)', async () => {
+      await linkPatient(provider.id, patient.id);
+      await request(app)
+        .get(`${API_PREFIX}/providers/patients`)
+        .set('Authorization', auth);
+      await expectAuditEntry(container.db, {
+        action: 'provider_listed_patients',
+        userId: provider.id,
+      });
     });
   });
 

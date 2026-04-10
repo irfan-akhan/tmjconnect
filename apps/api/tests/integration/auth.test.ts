@@ -10,6 +10,7 @@ import {
   sentEmails,
 } from '../helpers/testContainer';
 import { createTestPatient, createTestProvider } from '../helpers/factories';
+import { expectAuditEntry, waitForAuditEntry } from '../helpers/auditAssertions';
 import express from 'express';
 import { authRouter } from '../../src/routes/auth';
 import { createErrorHandler } from '../../src/middleware/errorHandler';
@@ -122,6 +123,23 @@ describe('Auth Routes', () => {
       expect(res.status).toBe(201);
       expect(res.body).not.toHaveProperty('access_token');
       expect(res.body).not.toHaveProperty('refresh_token');
+    });
+
+    it('writes an audit row on patient registration', async () => {
+      await request(app)
+        .post(`${API_PREFIX}/auth/patient/register`)
+        .send({
+          email: 'audit-pat@test.com',
+          password: 'Test@1234!',
+          first_name: 'Jane',
+          last_name: 'Doe',
+        });
+      // user_id is null on registration (no authenticated user yet) — match by action only.
+      const entry = await waitForAuditEntry(container.db, {
+        action: 'auth.patient_registered',
+        resourceType: 'user',
+      });
+      expect(entry).toBeDefined();
     });
   });
 
@@ -385,6 +403,12 @@ describe('Auth Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('setup_token');
+      // Audit assertion — MFA changes are HIPAA-significant and must be tracked.
+      await expectAuditEntry(container.db, {
+        action: 'auth.mfa_init',
+        userId: patient.id,
+        resourceType: 'user',
+      });
     });
 
     it('POST /auth/patient/mfa/init rejects if MFA already enabled', async () => {
@@ -584,6 +608,18 @@ describe('Auth Routes', () => {
         .send({ email: 'doesnotexist@test.com' });
 
       expect(res.status).toBe(200);
+    });
+
+    it('writes an audit row on every forgot-password request (HIPAA — track abuse)', async () => {
+      const patient = await createTestPatient(container.db, { email: 'auditreset@test.com' });
+      await request(app)
+        .post(`${API_PREFIX}/auth/forgot-password`)
+        .send({ email: patient.email });
+      const entry = await waitForAuditEntry(container.db, {
+        action: 'auth.password_reset_requested',
+        resourceType: 'user',
+      });
+      expect(entry).toBeDefined();
     });
   });
 
