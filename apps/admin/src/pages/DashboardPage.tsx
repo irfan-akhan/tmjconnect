@@ -236,7 +236,7 @@ export default function DashboardPage() {
                     dataKey="value"
                   >
                     {roleSplit.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} stroke="#fff" strokeWidth={2} />
+                      <Cell key={entry.name} fill={entry.color} stroke={isDark ? '#0F172A' : '#fff'} strokeWidth={2} />
                     ))}
                   </Pie>
                   <RechartsTooltip contentStyle={chartTooltipStyle} />
