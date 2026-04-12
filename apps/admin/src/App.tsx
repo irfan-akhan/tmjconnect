@@ -33,6 +33,19 @@ import {
   SettingsPage,
   HelpPage,
   NotFoundPage,
+  OutboxPage,
+  SessionsPage,
+  JobsPage,
+  ProviderPerformancePage,
+  PatientEngagementPage,
+  SecurityPage,
+  LinkingPage,
+  PhiAccessPage,
+  NotificationPrefsPage,
+  BroadcastsPage,
+  SystemMetricsPage,
+  ScheduledReportsPage,
+  FeatureFlagsPage,
 } from './lazyPages';
 // Centralised dayjs plugin registration — every page that imports from
 // `utils/time` triggers this, but importing once at the App root guarantees
@@ -82,6 +95,20 @@ function ThemedApp() {
                         <Route path="/reports" element={<ReportsPage />} />
                         <Route path="/settings" element={<SettingsPage />} />
                         <Route path="/help" element={<HelpPage />} />
+                        {/* TODO.md feature pages */}
+                        <Route path="/outbox" element={<OutboxPage />} />
+                        <Route path="/sessions" element={<SessionsPage />} />
+                        <Route path="/jobs" element={<JobsPage />} />
+                        <Route path="/providers/performance" element={<ProviderPerformancePage />} />
+                        <Route path="/patients/engagement" element={<PatientEngagementPage />} />
+                        <Route path="/security" element={<SecurityPage />} />
+                        <Route path="/linking" element={<LinkingPage />} />
+                        <Route path="/phi-access" element={<PhiAccessPage />} />
+                        <Route path="/notifications/preferences" element={<NotificationPrefsPage />} />
+                        <Route path="/broadcasts" element={<BroadcastsPage />} />
+                        <Route path="/system" element={<SystemMetricsPage />} />
+                        <Route path="/scheduled-reports" element={<ScheduledReportsPage />} />
+                        <Route path="/feature-flags" element={<FeatureFlagsPage />} />
                         <Route path="*" element={<NotFoundPage />} />
                       </Route>
                     </Route>

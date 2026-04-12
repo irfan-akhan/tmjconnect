@@ -33,6 +33,10 @@ interface Stats {
   active_users: number;
   reports_today: number;
   avg_response_hours: number | null;
+  // TODO #4: urgent reports alert (optional — endpoint returns when backend is deployed)
+  urgent_reports_waiting?: number;
+  urgent_reports_waiting_critical?: number;
+  pending_reports_total?: number;
 }
 
 export function useAdminStats() {

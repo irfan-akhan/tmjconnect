@@ -2,20 +2,6 @@ import { lazy } from 'react';
 
 /**
  * lazyPages.ts — central registry of lazy-loaded route components.
- *
- * Why this lives in its own file:
- *   1. The same loader function is shared by `React.lazy()` AND
- *      `prefetchRoute()`. Vite/Rollup memoise the dynamic-import promise the
- *      first time a loader is called, so a `prefetchRoute('/users')` on
- *      hover and a subsequent click on the menu item resolve to the same
- *      module — no double-fetch, no race.
- *   2. AdminLayout can call `prefetchRoute(item.key)` on menu hover
- *      without coupling the layout to App.tsx's route table.
- *
- * To add a new lazy page:
- *   - declare a `xxxLoader` const
- *   - export `lazy(xxxLoader)` for the router
- *   - if it should prefetch on hover, add it to `prefetchMap`
  */
 
 const dashboardLoader = () => import('./pages/DashboardPage');
@@ -29,6 +15,20 @@ const helpLoader = () => import('./pages/HelpPage');
 const notFoundLoader = () => import('./pages/NotFoundPage');
 const loginLoader = () => import('./pages/LoginPage');
 const mfaLoader = () => import('./pages/MfaPage');
+// TODO.md feature pages
+const outboxLoader = () => import('./pages/OutboxPage');
+const sessionsLoader = () => import('./pages/SessionsPage');
+const jobsLoader = () => import('./pages/JobsPage');
+const providerPerfLoader = () => import('./pages/ProviderPerformancePage');
+const patientEngagementLoader = () => import('./pages/PatientEngagementPage');
+const securityLoader = () => import('./pages/SecurityPage');
+const linkingLoader = () => import('./pages/LinkingPage');
+const phiAccessLoader = () => import('./pages/PhiAccessPage');
+const notifPrefsLoader = () => import('./pages/NotificationPrefsPage');
+const broadcastsLoader = () => import('./pages/BroadcastsPage');
+const systemMetricsLoader = () => import('./pages/SystemMetricsPage');
+const scheduledReportsLoader = () => import('./pages/ScheduledReportsPage');
+const featureFlagsLoader = () => import('./pages/FeatureFlagsPage');
 
 export const DashboardPage = lazy(dashboardLoader);
 export const UsersPage = lazy(usersLoader);
@@ -41,8 +41,21 @@ export const HelpPage = lazy(helpLoader);
 export const NotFoundPage = lazy(notFoundLoader);
 export const LoginPage = lazy(loginLoader);
 export const MfaPage = lazy(mfaLoader);
+// TODO.md pages
+export const OutboxPage = lazy(outboxLoader);
+export const SessionsPage = lazy(sessionsLoader);
+export const JobsPage = lazy(jobsLoader);
+export const ProviderPerformancePage = lazy(providerPerfLoader);
+export const PatientEngagementPage = lazy(patientEngagementLoader);
+export const SecurityPage = lazy(securityLoader);
+export const LinkingPage = lazy(linkingLoader);
+export const PhiAccessPage = lazy(phiAccessLoader);
+export const NotificationPrefsPage = lazy(notifPrefsLoader);
+export const BroadcastsPage = lazy(broadcastsLoader);
+export const SystemMetricsPage = lazy(systemMetricsLoader);
+export const ScheduledReportsPage = lazy(scheduledReportsLoader);
+export const FeatureFlagsPage = lazy(featureFlagsLoader);
 
-/** Map of sidebar nav paths → their dynamic-import loaders. */
 const prefetchMap: Record<string, () => Promise<unknown>> = {
   '/': dashboardLoader,
   '/users': usersLoader,
@@ -51,12 +64,21 @@ const prefetchMap: Record<string, () => Promise<unknown>> = {
   '/reports': reportsLoader,
   '/settings': settingsLoader,
   '/help': helpLoader,
+  '/outbox': outboxLoader,
+  '/sessions': sessionsLoader,
+  '/jobs': jobsLoader,
+  '/providers/performance': providerPerfLoader,
+  '/patients/engagement': patientEngagementLoader,
+  '/security': securityLoader,
+  '/linking': linkingLoader,
+  '/phi-access': phiAccessLoader,
+  '/notifications/preferences': notifPrefsLoader,
+  '/broadcasts': broadcastsLoader,
+  '/system': systemMetricsLoader,
+  '/scheduled-reports': scheduledReportsLoader,
+  '/feature-flags': featureFlagsLoader,
 };
 
-/**
- * Trigger the dynamic import for a given route. Idempotent — calling it
- * twice resolves to the cached module promise. Safe to fire on every hover.
- */
 export function prefetchRoute(path: string): void {
   prefetchMap[path]?.();
 }

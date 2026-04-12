@@ -20,6 +20,17 @@ import {
   QuestionCircleOutlined,
   LockOutlined,
   UnlockOutlined,
+  InboxOutlined,
+  ThunderboltOutlined,
+  RiseOutlined,
+  FireOutlined,
+  SafetyOutlined,
+  LinkOutlined,
+  FileSearchOutlined,
+  NotificationOutlined,
+  DatabaseOutlined,
+  ScheduleOutlined,
+  FlagOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useThemeMode } from '../context/ThemeContext';
@@ -48,6 +59,9 @@ const navGroups: { label: string; items: { key: string; icon: ReactNode; label: 
     items: [
       { key: '/users', icon: <TeamOutlined />, label: 'Users' },
       { key: '/reports', icon: <FileTextOutlined />, label: 'Reports' },
+      { key: '/providers/performance', icon: <RiseOutlined />, label: 'Provider performance' },
+      { key: '/patients/engagement', icon: <FireOutlined />, label: 'Patient engagement' },
+      { key: '/linking', icon: <LinkOutlined />, label: 'Linking' },
     ],
   },
   {
@@ -55,6 +69,21 @@ const navGroups: { label: string; items: { key: string; icon: ReactNode; label: 
     items: [
       { key: '/audit-logs', icon: <AuditOutlined />, label: 'Audit Logs' },
       { key: '/login-events', icon: <LoginOutlined />, label: 'Login Events' },
+      { key: '/sessions', icon: <UserOutlined />, label: 'Active sessions' },
+      { key: '/security', icon: <SafetyOutlined />, label: 'Security ops' },
+      { key: '/phi-access', icon: <FileSearchOutlined />, label: 'PHI access' },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { key: '/outbox', icon: <InboxOutlined />, label: 'Notification outbox' },
+      { key: '/jobs', icon: <ThunderboltOutlined />, label: 'Jobs' },
+      { key: '/notifications/preferences', icon: <BellOutlined />, label: 'Notif. preferences' },
+      { key: '/broadcasts', icon: <NotificationOutlined />, label: 'Broadcasts' },
+      { key: '/system', icon: <DatabaseOutlined />, label: 'System metrics' },
+      { key: '/scheduled-reports', icon: <ScheduleOutlined />, label: 'Scheduled reports' },
+      { key: '/feature-flags', icon: <FlagOutlined />, label: 'Feature flags' },
     ],
   },
   {
@@ -75,6 +104,19 @@ const segmentLabels: Record<string, string> = {
   reports: 'Reports',
   settings: 'Settings',
   help: 'Help',
+  outbox: 'Notification outbox',
+  sessions: 'Active sessions',
+  jobs: 'Jobs',
+  providers: 'Providers',
+  patients: 'Patients',
+  security: 'Security',
+  linking: 'Linking',
+  'phi-access': 'PHI access',
+  notifications: 'Notifications',
+  broadcasts: 'Broadcasts',
+  system: 'System',
+  'scheduled-reports': 'Scheduled reports',
+  'feature-flags': 'Feature flags',
 };
 
 /** Build breadcrumb segments: [{ label, href? }, ...] */

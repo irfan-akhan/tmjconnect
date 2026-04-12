@@ -159,6 +159,90 @@ export default function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) 
       },
       {
         type: 'action',
+        id: 'go-outbox',
+        label: 'Go to Outbox monitor',
+        icon: <FileTextOutlined />,
+        run: () => navigate('/outbox'),
+      },
+      {
+        type: 'action',
+        id: 'go-sessions',
+        label: 'Go to Active sessions',
+        icon: <TeamOutlined />,
+        run: () => navigate('/sessions'),
+      },
+      {
+        type: 'action',
+        id: 'go-jobs',
+        label: 'Go to Jobs',
+        icon: <AuditOutlined />,
+        run: () => navigate('/jobs'),
+      },
+      {
+        type: 'action',
+        id: 'go-provider-perf',
+        label: 'Go to Provider performance',
+        icon: <TeamOutlined />,
+        run: () => navigate('/providers/performance'),
+      },
+      {
+        type: 'action',
+        id: 'go-patient-engagement',
+        label: 'Go to Patient engagement',
+        icon: <TeamOutlined />,
+        run: () => navigate('/patients/engagement'),
+      },
+      {
+        type: 'action',
+        id: 'go-security',
+        label: 'Go to Security operations',
+        icon: <LockOutlined />,
+        run: () => navigate('/security'),
+      },
+      {
+        type: 'action',
+        id: 'go-linking',
+        label: 'Go to Linking',
+        icon: <LoginOutlined />,
+        run: () => navigate('/linking'),
+      },
+      {
+        type: 'action',
+        id: 'go-phi',
+        label: 'Go to PHI access reports',
+        icon: <AuditOutlined />,
+        run: () => navigate('/phi-access'),
+      },
+      {
+        type: 'action',
+        id: 'go-broadcasts',
+        label: 'Go to Broadcasts',
+        icon: <FileTextOutlined />,
+        run: () => navigate('/broadcasts'),
+      },
+      {
+        type: 'action',
+        id: 'go-system',
+        label: 'Go to System metrics',
+        icon: <ThunderboltOutlined />,
+        run: () => navigate('/system'),
+      },
+      {
+        type: 'action',
+        id: 'go-scheduled',
+        label: 'Go to Scheduled reports',
+        icon: <FileTextOutlined />,
+        run: () => navigate('/scheduled-reports'),
+      },
+      {
+        type: 'action',
+        id: 'go-flags',
+        label: 'Go to Feature flags',
+        icon: <SettingOutlined />,
+        run: () => navigate('/feature-flags'),
+      },
+      {
+        type: 'action',
         id: 'toggle-theme',
         label: mode === 'light' ? 'Switch to dark mode' : 'Switch to light mode',
         hint: 't',
@@ -221,16 +305,31 @@ export default function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) 
     let cancelled = false;
     setLoading(true);
 
-    Promise.allSettled([
-      api.get('/admin/users', { params: { search: debounced, page: 1, limit: 5 } }),
-      api.get('/admin/audit-logs', { params: { action: debounced, page: 1, limit: 5 } }),
-      // login_events doesn't accept a free-text filter — fall back to user_id only
-      // when the query looks like a UUID prefix.
-      /^[0-9a-f]{4,}/i.test(debounced)
-        ? api.get('/admin/login-events', { params: { user_id: debounced, page: 1, limit: 5 } })
-        : Promise.resolve(null),
-    ])
-      .then(([uRes, aRes, lRes]) => {
+    // TODO #11: Try the server-side global search endpoint first. If it's
+    // not deployed yet (404) or errors, fall back to the per-endpoint
+    // filter approach below.
+    api.get('/admin/search', { params: { q: debounced, types: 'user,report,audit_log' } })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const users: UserHit[] = (data.data?.users ?? []).map((u: Record<string, unknown>) => ({
+          type: 'user' as const, ...u,
+        })) as UserHit[];
+        const audit: AuditHit[] = (data.data?.audit_logs ?? []).map((a: Record<string, unknown>) => ({
+          type: 'audit' as const, ...a,
+        })) as AuditHit[];
+        setResults({ actions: matchingActions, users, audit, logins: [] });
+        setHighlight(0);
+      })
+      .catch(async () => {
+        // Fallback — server search not deployed. Use the multi-endpoint approach.
+        if (cancelled) return;
+        const [uRes, aRes, lRes] = await Promise.allSettled([
+          api.get('/admin/users', { params: { search: debounced, page: 1, limit: 5 } }),
+          api.get('/admin/audit-logs', { params: { action: debounced, page: 1, limit: 5 } }),
+          /^[0-9a-f]{4,}/i.test(debounced)
+            ? api.get('/admin/login-events', { params: { user_id: debounced, page: 1, limit: 5 } })
+            : Promise.resolve(null),
+        ]);
         if (cancelled) return;
         const users: UserHit[] =
           uRes.status === 'fulfilled'

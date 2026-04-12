@@ -168,6 +168,41 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* ─── TODO #4: Urgent reports alert row (shown only when > 0) ───── */}
+      {(stats.urgent_reports_waiting ?? 0) > 0 && (
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Link to="/reports?urgency=urgent&status=submitted">
+            <KpiCard
+              label="Urgent reports waiting"
+              value={stats.urgent_reports_waiting ?? 0}
+              icon={<FileTextOutlined />}
+              tone="danger"
+              hint="Urgent + submitted > 1h old"
+            />
+          </Link>
+          {(stats.urgent_reports_waiting_critical ?? 0) > 0 && (
+            <Link to="/reports?urgency=urgent&status=submitted&unanswered_over_hours=4">
+              <KpiCard
+                label="Critical (>4h)"
+                value={stats.urgent_reports_waiting_critical ?? 0}
+                icon={<FileTextOutlined />}
+                tone="danger"
+                hint="Urgent + unanswered > 4 hours"
+              />
+            </Link>
+          )}
+          <Link to="/reports?status=submitted">
+            <KpiCard
+              label="All pending reports"
+              value={stats.pending_reports_total ?? 0}
+              icon={<FileTextOutlined />}
+              tone="warning"
+              hint="Any status = submitted"
+            />
+          </Link>
+        </div>
+      )}
+
       {/* ─── Charts row ───────────────────────────────────────────────── */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
