@@ -101,7 +101,8 @@ async function main() {
     role: 'admin',
     email_verified: true,
     is_active: true,
-    mfa_enabled: false,
+    mfa_enabled: true,
+    mfa_secret: encryptCode('JBSWY3DPEHPK3PXP'), // Fake TOTP secret.
     tos_accepted_at: daysAgo(30),
     tos_version: '1.0',
   }).returning({ id: schema.users.id });
