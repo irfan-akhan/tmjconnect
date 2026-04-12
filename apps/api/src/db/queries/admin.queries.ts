@@ -10,6 +10,9 @@ import {
   auditLogs,
   loginEvents,
   reports,
+  sessions,
+  notificationOutbox,
+  jobRuns,
 } from '../schema';
 
 type DbClient = Db['db'];
@@ -325,11 +328,462 @@ export async function listAllReports(
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
 }
 
-export async function countAllReports(db: DbClient) {
+export async function countAllReports(
+  db: DbClient,
+  filters?: { urgency?: string; status?: string; unanswered_over_hours?: number },
+) {
   type CountRow = { total: string };
   const result = await db.execute<CountRow>(sql`
-    SELECT COUNT(*)::text AS total FROM reports
+    SELECT COUNT(*)::text AS total FROM reports r
+    WHERE TRUE
+    ${filters?.urgency ? sql`AND r.urgency = ${filters.urgency}` : sql``}
+    ${filters?.status ? sql`AND r.status = ${filters.status}` : sql``}
+    ${filters?.unanswered_over_hours ? sql`AND r.status = 'submitted' AND r.submitted_at < NOW() - make_interval(hours => ${filters.unanswered_over_hours})` : sql``}
   `);
   const rows: CountRow[] = Array.isArray(result) ? result : result.rows ?? [];
   return parseInt(rows[0]?.total ?? '0', 10);
+}
+
+// Update listAllReports to accept filters
+export async function listAllReportsFiltered(
+  db: DbClient,
+  page: number,
+  limit: number,
+  filters?: { urgency?: string; status?: string; unanswered_over_hours?: number },
+) {
+  const offset = (page - 1) * limit;
+
+  return db.execute(sql`
+    SELECT
+      r.id, r.patient_id, r.provider_id, r.urgency, r.status,
+      r.pain_level, r.flagged,
+      r.submitted_at::text AS submitted_at,
+      pp.first_name AS patient_first_name,
+      pp.last_name AS patient_last_name,
+      prp.first_name AS provider_first_name,
+      prp.last_name AS provider_last_name
+    FROM reports r
+    LEFT JOIN profiles pp ON pp.user_id = r.patient_id
+    LEFT JOIN profiles prp ON prp.user_id = r.provider_id
+    WHERE TRUE
+    ${filters?.urgency ? sql`AND r.urgency = ${filters.urgency}` : sql``}
+    ${filters?.status ? sql`AND r.status = ${filters.status}` : sql``}
+    ${filters?.unanswered_over_hours ? sql`AND r.status = 'submitted' AND r.submitted_at < NOW() - make_interval(hours => ${filters.unanswered_over_hours})` : sql``}
+    ORDER BY r.submitted_at DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+}
+
+// ─── TODO #4: Extended stats (urgent reports waiting) ───────────────────────────
+
+export async function getExtendedAdminStats(db: DbClient) {
+  type Row = {
+    urgent_reports_waiting: string;
+    urgent_reports_waiting_critical: string;
+    pending_reports_total: string;
+  };
+
+  const [row] = await db.execute<Row>(sql`
+    SELECT
+      (SELECT COUNT(*)::text FROM reports
+       WHERE urgency = 'urgent' AND status = 'submitted'
+         AND submitted_at < NOW() - INTERVAL '1 hour') AS urgent_reports_waiting,
+      (SELECT COUNT(*)::text FROM reports
+       WHERE urgency = 'urgent' AND status = 'submitted'
+         AND submitted_at < NOW() - INTERVAL '4 hours') AS urgent_reports_waiting_critical,
+      (SELECT COUNT(*)::text FROM reports
+       WHERE status = 'submitted') AS pending_reports_total
+  `).then((r) => {
+    const rows = Array.isArray(r) ? r : r.rows ?? [];
+    return rows;
+  });
+
+  return {
+    urgent_reports_waiting: parseInt(row?.urgent_reports_waiting ?? '0', 10),
+    urgent_reports_waiting_critical: parseInt(row?.urgent_reports_waiting_critical ?? '0', 10),
+    pending_reports_total: parseInt(row?.pending_reports_total ?? '0', 10),
+  };
+}
+
+// ─── TODO #1: Notification outbox monitor ───────────────────────────────────────
+
+type OutboxStatsRow = {
+  pending: string;
+  dlq: string;
+  sent_24h: string;
+  failed_24h: string;
+};
+
+type ChannelStatsRow = {
+  channel: string;
+  pending: string;
+  sent_24h: string;
+  dlq: string;
+};
+
+type HourlyVolumeRow = {
+  hour: string;
+  sent: string;
+  failed: string;
+};
+
+export async function getOutboxStats(db: DbClient) {
+  const [totals] = await db.execute<OutboxStatsRow>(sql`
+    SELECT
+      (SELECT COUNT(*)::text FROM notification_outbox WHERE sent_at IS NULL AND attempts < max_attempts) AS pending,
+      (SELECT COUNT(*)::text FROM notification_outbox WHERE sent_at IS NULL AND attempts >= max_attempts) AS dlq,
+      (SELECT COUNT(*)::text FROM notification_outbox WHERE sent_at IS NOT NULL AND sent_at >= NOW() - INTERVAL '24 hours') AS sent_24h,
+      (SELECT COUNT(*)::text FROM notification_outbox WHERE sent_at IS NULL AND attempts >= max_attempts AND created_at >= NOW() - INTERVAL '24 hours') AS failed_24h
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+
+  const channelRows = await db.execute<ChannelStatsRow>(sql`
+    SELECT
+      channel::text AS channel,
+      COUNT(*) FILTER (WHERE sent_at IS NULL AND attempts < max_attempts)::text AS pending,
+      COUNT(*) FILTER (WHERE sent_at IS NOT NULL AND sent_at >= NOW() - INTERVAL '24 hours')::text AS sent_24h,
+      COUNT(*) FILTER (WHERE sent_at IS NULL AND attempts >= max_attempts)::text AS dlq
+    FROM notification_outbox
+    GROUP BY channel
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+
+  const hourlyRows = await db.execute<HourlyVolumeRow>(sql`
+    SELECT
+      to_char(date_trunc('hour', created_at), 'YYYY-MM-DD"T"HH24:00') AS hour,
+      COUNT(*) FILTER (WHERE sent_at IS NOT NULL)::text AS sent,
+      COUNT(*) FILTER (WHERE sent_at IS NULL AND attempts >= max_attempts)::text AS failed
+    FROM notification_outbox
+    WHERE created_at >= NOW() - INTERVAL '24 hours'
+    GROUP BY date_trunc('hour', created_at)
+    ORDER BY date_trunc('hour', created_at)
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+
+  const byChannel: Record<string, { pending: number; sent_24h: number; dlq: number }> = {};
+  for (const ch of channelRows) {
+    byChannel[ch.channel] = {
+      pending: parseInt(ch.pending, 10),
+      sent_24h: parseInt(ch.sent_24h, 10),
+      dlq: parseInt(ch.dlq, 10),
+    };
+  }
+
+  return {
+    pending: parseInt(totals?.pending ?? '0', 10),
+    dlq: parseInt(totals?.dlq ?? '0', 10),
+    sent_24h: parseInt(totals?.sent_24h ?? '0', 10),
+    failed_24h: parseInt(totals?.failed_24h ?? '0', 10),
+    by_channel: byChannel,
+    hourly_volume: hourlyRows.map((r) => ({
+      hour: r.hour,
+      sent: parseInt(r.sent, 10),
+      failed: parseInt(r.failed, 10),
+    })),
+  };
+}
+
+export async function listOutboxDlq(
+  db: DbClient,
+  page: number,
+  limit: number,
+  channel?: string,
+) {
+  const offset = (page - 1) * limit;
+  return db.execute(sql`
+    SELECT id, user_id, channel::text, type, payload, attempts, max_attempts,
+           next_attempt_at::text, last_error, created_at::text
+    FROM notification_outbox
+    WHERE sent_at IS NULL AND attempts >= max_attempts
+    ${channel ? sql`AND channel = ${channel}` : sql``}
+    ORDER BY created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+}
+
+export async function countOutboxDlq(db: DbClient, channel?: string) {
+  type Row = { total: string };
+  const result = await db.execute<Row>(sql`
+    SELECT COUNT(*)::text AS total FROM notification_outbox
+    WHERE sent_at IS NULL AND attempts >= max_attempts
+    ${channel ? sql`AND channel = ${channel}` : sql``}
+  `);
+  const rows: Row[] = Array.isArray(result) ? result : result.rows ?? [];
+  return parseInt(rows[0]?.total ?? '0', 10);
+}
+
+export async function listOutboxPending(
+  db: DbClient,
+  page: number,
+  limit: number,
+  channel?: string,
+) {
+  const offset = (page - 1) * limit;
+  return db.execute(sql`
+    SELECT id, user_id, channel::text, type, payload, attempts, max_attempts,
+           next_attempt_at::text, last_error, created_at::text
+    FROM notification_outbox
+    WHERE sent_at IS NULL AND attempts < max_attempts
+    ${channel ? sql`AND channel = ${channel}` : sql``}
+    ORDER BY next_attempt_at ASC
+    LIMIT ${limit} OFFSET ${offset}
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+}
+
+export async function countOutboxPending(db: DbClient, channel?: string) {
+  type Row = { total: string };
+  const result = await db.execute<Row>(sql`
+    SELECT COUNT(*)::text AS total FROM notification_outbox
+    WHERE sent_at IS NULL AND attempts < max_attempts
+    ${channel ? sql`AND channel = ${channel}` : sql``}
+  `);
+  const rows: Row[] = Array.isArray(result) ? result : result.rows ?? [];
+  return parseInt(rows[0]?.total ?? '0', 10);
+}
+
+export async function retryOutboxEntry(db: DbClient, id: string) {
+  return db.execute(sql`
+    UPDATE notification_outbox
+    SET attempts = 0, next_attempt_at = NOW(), last_error = NULL
+    WHERE id = ${id} AND sent_at IS NULL
+    RETURNING id
+  `).then((r) => {
+    const rows = Array.isArray(r) ? r : r.rows ?? [];
+    return rows.length > 0;
+  });
+}
+
+export async function dropOutboxEntry(db: DbClient, id: string) {
+  return db.execute(sql`
+    DELETE FROM notification_outbox WHERE id = ${id} AND sent_at IS NULL
+    RETURNING id
+  `).then((r) => {
+    const rows = Array.isArray(r) ? r : r.rows ?? [];
+    return rows.length > 0;
+  });
+}
+
+// ─── TODO #2: Active sessions ───────────────────────────────────────────────────
+
+type SessionRow = {
+  id: string;
+  user_id: string;
+  user_email: string;
+  user_role: string;
+  ip_address: string | null;
+  device_info: string | null;
+  last_active: string;
+  created_at: string;
+};
+
+export async function listActiveSessions(
+  db: DbClient,
+  page: number,
+  limit: number,
+  role?: string,
+) {
+  const offset = (page - 1) * limit;
+  return db.execute<SessionRow>(sql`
+    SELECT
+      s.id, s.user_id, u.email AS user_email, u.role AS user_role,
+      s.ip_address::text, s.device_info,
+      s.last_active::text AS last_active, s.created_at::text AS created_at
+    FROM sessions s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.expires_at > NOW()
+    ${role ? sql`AND u.role = ${role}` : sql``}
+    ORDER BY s.last_active DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+}
+
+export async function countActiveSessions(db: DbClient, role?: string) {
+  type Row = { total: string };
+  const result = await db.execute<Row>(sql`
+    SELECT COUNT(*)::text AS total FROM sessions s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.expires_at > NOW()
+    ${role ? sql`AND u.role = ${role}` : sql``}
+  `);
+  const rows: Row[] = Array.isArray(result) ? result : result.rows ?? [];
+  return parseInt(rows[0]?.total ?? '0', 10);
+}
+
+type SessionSummary = {
+  total_active: string;
+  patients: string;
+  providers: string;
+  admins: string;
+};
+
+export async function getSessionSummary(db: DbClient) {
+  const [row] = await db.execute<SessionSummary>(sql`
+    SELECT
+      COUNT(*)::text AS total_active,
+      COUNT(*) FILTER (WHERE u.role = 'patient')::text AS patients,
+      COUNT(*) FILTER (WHERE u.role = 'provider')::text AS providers,
+      COUNT(*) FILTER (WHERE u.role = 'admin')::text AS admins
+    FROM sessions s
+    JOIN users u ON u.id = s.user_id
+    WHERE s.last_active > NOW() - INTERVAL '15 minutes'
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+
+  return {
+    total_active: parseInt(row?.total_active ?? '0', 10),
+    by_role: {
+      patient: parseInt(row?.patients ?? '0', 10),
+      provider: parseInt(row?.providers ?? '0', 10),
+      admin: parseInt(row?.admins ?? '0', 10),
+    },
+  };
+}
+
+export async function deleteSession(db: DbClient, sessionId: string) {
+  return db.execute(sql`
+    DELETE FROM sessions WHERE id = ${sessionId} RETURNING id
+  `).then((r) => {
+    const rows = Array.isArray(r) ? r : r.rows ?? [];
+    return rows.length > 0;
+  });
+}
+
+// ─── TODO #3: Job runner health ─────────────────────────────────────────────────
+
+type JobSummaryRow = {
+  job_name: string;
+  last_status: string | null;
+  last_started_at: string | null;
+  last_duration_ms: string | null;
+  last_rows_affected: string | null;
+  last_error_message: string | null;
+  last_success_at: string | null;
+  success_rate_24h: string;
+  avg_duration_ms_7d: string;
+};
+
+/** Job schedule metadata — maintained here so the API response includes the cron expression. */
+const JOB_SCHEDULES: Record<string, string> = {
+  reminderJob: '* * * * *',
+  codeExpiryJob: '0 * * * *',
+  weeklyDigestJob: '5 * * * *',
+  cleanupJob: '0 3 * * *',
+  orphanFileCleanupJob: '0 4 * * *',
+  outboxJob: '* * * * *',
+};
+
+export async function getJobSummaries(db: DbClient) {
+  const rows = await db.execute<JobSummaryRow>(sql`
+    WITH latest AS (
+      SELECT DISTINCT ON (job_name) job_name, status, started_at, duration_ms, rows_affected, error_message
+      FROM job_runs
+      ORDER BY job_name, started_at DESC
+    ),
+    success_latest AS (
+      SELECT DISTINCT ON (job_name) job_name, started_at AS last_success_at
+      FROM job_runs
+      WHERE status = 'success'
+      ORDER BY job_name, started_at DESC
+    ),
+    stats_24h AS (
+      SELECT
+        job_name,
+        ROUND(COUNT(*) FILTER (WHERE status = 'success')::numeric / NULLIF(COUNT(*), 0), 2)::text AS success_rate_24h
+      FROM job_runs
+      WHERE started_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY job_name
+    ),
+    avg_7d AS (
+      SELECT
+        job_name,
+        ROUND(AVG(duration_ms))::text AS avg_duration_ms_7d
+      FROM job_runs
+      WHERE started_at >= NOW() - INTERVAL '7 days' AND status = 'success'
+      GROUP BY job_name
+    )
+    SELECT
+      l.job_name,
+      l.status::text AS last_status,
+      l.started_at::text AS last_started_at,
+      l.duration_ms::text AS last_duration_ms,
+      l.rows_affected::text AS last_rows_affected,
+      l.error_message AS last_error_message,
+      sl.last_success_at::text AS last_success_at,
+      COALESCE(s.success_rate_24h, '0') AS success_rate_24h,
+      COALESCE(a.avg_duration_ms_7d, '0') AS avg_duration_ms_7d
+    FROM latest l
+    LEFT JOIN success_latest sl ON sl.job_name = l.job_name
+    LEFT JOIN stats_24h s ON s.job_name = l.job_name
+    LEFT JOIN avg_7d a ON a.job_name = l.job_name
+    ORDER BY l.job_name
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+
+  return rows.map((r) => ({
+    job_name: r.job_name,
+    schedule: JOB_SCHEDULES[r.job_name] ?? 'unknown',
+    last_run: r.last_status
+      ? {
+          status: r.last_status,
+          started_at: r.last_started_at,
+          duration_ms: r.last_duration_ms ? parseInt(r.last_duration_ms, 10) : null,
+          rows_affected: r.last_rows_affected ? parseInt(r.last_rows_affected, 10) : null,
+          error_message: r.last_error_message,
+        }
+      : null,
+    last_success_at: r.last_success_at,
+    success_rate_24h: parseFloat(r.success_rate_24h),
+    avg_duration_ms_7d: parseInt(r.avg_duration_ms_7d, 10),
+  }));
+}
+
+export async function listJobHistory(
+  db: DbClient,
+  jobName: string,
+  page: number,
+  limit: number,
+) {
+  const offset = (page - 1) * limit;
+  return db.execute(sql`
+    SELECT id, job_name, status::text, started_at::text, finished_at::text,
+           duration_ms, rows_affected, error_message, metadata
+    FROM job_runs
+    WHERE job_name = ${jobName}
+    ORDER BY started_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+}
+
+export async function countJobHistory(db: DbClient, jobName: string) {
+  type Row = { total: string };
+  const result = await db.execute<Row>(sql`
+    SELECT COUNT(*)::text AS total FROM job_runs WHERE job_name = ${jobName}
+  `);
+  const rows: Row[] = Array.isArray(result) ? result : result.rows ?? [];
+  return parseInt(rows[0]?.total ?? '0', 10);
+}
+
+/** Insert a running job record; returns the row id for later update. */
+export async function insertJobRun(
+  db: DbClient,
+  jobName: string,
+) {
+  const result = await db.execute<{ id: string }>(sql`
+    INSERT INTO job_runs (job_name, status) VALUES (${jobName}, 'running')
+    RETURNING id
+  `);
+  const rows = Array.isArray(result) ? result : result.rows ?? [];
+  return rows[0]?.id ?? null;
+}
+
+export async function completeJobRun(
+  db: DbClient,
+  id: string,
+  status: 'success' | 'failed' | 'skipped',
+  durationMs: number,
+  rowsAffected?: number,
+  errorMessage?: string,
+) {
+  return db.execute(sql`
+    UPDATE job_runs
+    SET status = ${status}, finished_at = NOW(), duration_ms = ${durationMs},
+        rows_affected = ${rowsAffected ?? null}, error_message = ${errorMessage ?? null}
+    WHERE id = ${id}
+  `);
 }

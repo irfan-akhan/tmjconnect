@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   uuid,
   varchar,
   text,
@@ -72,4 +73,69 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
   created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
   // 24-hour expiry. Cleaned up by codeExpiryJob.
   expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+// ─── job_runs ────────────────────────────────────────────────────────────────────
+// Tracks every scheduled job execution for the admin "Job runner health" panel.
+// Rows are pruned after 30 days by the cleanupJob.
+
+export const jobStatusEnum = pgEnum('job_status', ['running', 'success', 'failed', 'skipped']);
+
+// ─── broadcasts ──────────────────────────────────────────────────────────────────
+// Admin broadcast messages sent to platform users.
+export const broadcasts = pgTable('broadcasts', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  created_by: uuid('created_by').notNull().references(() => users.id, { onDelete: 'set null' }),
+  audience: varchar('audience', { length: 20 }).notNull(),
+  type: varchar('type', { length: 20 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  body: text('body').notNull(),
+  channels: text('channels').array().notNull(),
+  recipient_count: integer('recipient_count').notNull().default(0),
+  scheduled_at: timestamp('scheduled_at', { withTimezone: true }),
+  sent_at: timestamp('sent_at', { withTimezone: true }),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+});
+
+// ─── scheduled_reports ───────────────────────────────────────────────────────────
+// Recurring CSV export jobs created by admins.
+export const scheduledReports = pgTable('scheduled_reports', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  created_by: uuid('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 200 }).notNull(),
+  entity: varchar('entity', { length: 50 }).notNull(),
+  filters: jsonb('filters').notNull().default(sql`'{}'`),
+  cadence: varchar('cadence', { length: 20 }).notNull(),
+  recipient_emails: text('recipient_emails').array().notNull(),
+  next_run_at: timestamp('next_run_at', { withTimezone: true }).notNull(),
+  last_run_at: timestamp('last_run_at', { withTimezone: true }),
+  enabled: boolean('enabled').notNull().default(true),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+});
+
+// ─── feature_flags ───────────────────────────────────────────────────────────────
+// Simple feature flag system for gradual rollouts.
+export const featureFlags = pgTable('feature_flags', {
+  key: varchar('key', { length: 100 }).primaryKey(),
+  enabled: boolean('enabled').notNull().default(false),
+  description: text('description'),
+  rollout_percent: integer('rollout_percent').notNull().default(0),
+  target_roles: text('target_roles').array(),
+  updated_by: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+});
+
+// ─── job_runs ────────────────────────────────────────────────────────────────────
+export const jobRuns = pgTable('job_runs', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  job_name: varchar('job_name', { length: 50 }).notNull(),
+  status: jobStatusEnum('status').notNull(),
+  started_at: timestamp('started_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  finished_at: timestamp('finished_at', { withTimezone: true }),
+  duration_ms: integer('duration_ms'),
+  rows_affected: integer('rows_affected'),
+  error_message: text('error_message'),
+  metadata: jsonb('metadata').notNull().default(sql`'{}'`),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
 });

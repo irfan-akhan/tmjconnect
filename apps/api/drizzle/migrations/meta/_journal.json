@@ -22,6 +22,27 @@
       "when": 1744329602000,
       "tag": "0003_refresh_token_revocation",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1744329603000,
+      "tag": "0004_notification_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1744329604000,
+      "tag": "0005_job_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1744329605000,
+      "tag": "0006_broadcasts_scheduled_reports_feature_flags",
+      "breakpoints": true
     }
   ]
 }
