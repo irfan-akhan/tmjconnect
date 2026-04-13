@@ -62,6 +62,7 @@ export default function BroadcastsPage() {
           dataSource={items}
           loading={isLoading}
           sticky
+          scroll={{ x: 'max-content' }}
           pagination={{
             current: meta.page,
             pageSize: meta.limit,

@@ -216,6 +216,7 @@ export default function UserDetailPage() {
                   <Table
                     rowKey="id"
                     size="middle"
+                    scroll={{ x: 'max-content' }}
                     dataSource={detail.recent_audit_logs.items}
                     pagination={false}
                     locale={{
@@ -268,6 +269,7 @@ export default function UserDetailPage() {
                   <Table
                     rowKey="id"
                     size="middle"
+                    scroll={{ x: 'max-content' }}
                     dataSource={detail.recent_login_events.items}
                     pagination={false}
                     locale={{

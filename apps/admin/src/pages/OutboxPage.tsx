@@ -366,6 +366,7 @@ export default function OutboxPage() {
             dataSource={data}
             loading={activeQuery.isLoading}
             sticky
+            scroll={{ x: 'max-content' }}
             pagination={{
               current: meta.page,
               pageSize: meta.limit,

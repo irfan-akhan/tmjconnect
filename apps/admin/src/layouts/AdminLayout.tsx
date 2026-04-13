@@ -144,6 +144,7 @@ export default function AdminLayout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [toastDrawerOpen, setToastDrawerOpen] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const { user, logout } = useAuth();
   const { mode, toggle: toggleTheme } = useThemeMode();
   const { readOnly, setReadOnly, sidebarCollapsed, setSidebarCollapsed } = usePreferences();
@@ -176,34 +177,47 @@ export default function AdminLayout() {
   // Each item label is wrapped in a span that calls `prefetchRoute()` on
   // hover so the lazy chunk is already in cache by the time the user clicks.
   // Vite memoises the dynamic-import promise, so repeated hovers are no-ops.
-  const menuItems = navGroups.flatMap((group, gi) => [
-    {
-      type: 'group' as const,
-      key: `g-${gi}`,
-      label: !collapsed ? (
-        <div className="px-3 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-          {group.label}
-        </div>
-      ) : null,
-    },
-    ...group.items.map((item) => ({
-      key: item.key,
-      icon: item.icon,
-      label: (
-        <span onMouseEnter={() => prefetchRoute(item.key)}>{item.label}</span>
-      ),
-    })),
-  ]);
+  // When collapsed we flatten out group wrappers entirely — antd reserves
+  // padding for empty group slots, which produces visible gaps between icons.
+  const showGroups = !collapsed || mobileDrawerOpen;
+  const menuItems = showGroups
+    ? navGroups.flatMap((group, gi) => [
+        {
+          type: 'group' as const,
+          key: `g-${gi}`,
+          label: (
+            <div className="px-3 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              {group.label}
+            </div>
+          ),
+        },
+        ...group.items.map((item) => ({
+          key: item.key,
+          icon: item.icon,
+          label: (
+            <span onMouseEnter={() => prefetchRoute(item.key)}>{item.label}</span>
+          ),
+        })),
+      ])
+    : navGroups.flatMap((group) =>
+        group.items.map((item) => ({
+          key: item.key,
+          icon: item.icon,
+          label: (
+            <span onMouseEnter={() => prefetchRoute(item.key)}>{item.label}</span>
+          ),
+        })),
+      );
 
   const userInitials = (user?.email ?? '?').slice(0, 2).toUpperCase();
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   // The sidebar content is shared between the permanent desktop Sider and
-  // the mobile Drawer. Extract it into a fragment to avoid duplication.
+  // the mobile Drawer. Uses a flex column so the nav area scrolls while the
+  // user card stays pinned as a real footer (no absolute positioning / overlap).
   const sidebarContent = (
-    <>
+    <div className="flex h-full flex-col">
       {/* Brand */}
-      <div className={`flex h-16 items-center ${collapsed && !mobileDrawerOpen ? 'justify-center' : 'px-5'}`}>
+      <div className={`flex h-16 shrink-0 items-center ${collapsed && !mobileDrawerOpen ? 'justify-center' : 'px-5'}`}>
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-md">
             <HeartFilled style={{ fontSize: 18 }} />
@@ -221,8 +235,8 @@ export default function AdminLayout() {
         </div>
       </div>
 
-      {/* Nav */}
-      <div className="mt-2">
+      {/* Nav — scrolls independently when taller than viewport */}
+      <div className="dark-scrollbar min-h-0 flex-1 overflow-y-auto pt-2">
         <Menu
           theme="dark"
           mode="inline"
@@ -236,28 +250,35 @@ export default function AdminLayout() {
         />
       </div>
 
-      {/* User card pinned to bottom */}
-      {(!collapsed || mobileDrawerOpen) && user && (
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="rounded-lg border border-slate-800 bg-slate-800/40 p-3">
-            <div className="flex items-center gap-3">
-              <Avatar
-                size={36}
-                style={{ background: '#0D9488', fontWeight: 600, fontSize: 13 }}
-              >
-                {userInitials}
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-white">{user.email}</div>
-                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                  Administrator
+      {/* User card — footer, not overlapping nav */}
+      {user && (
+        <div className={`shrink-0 border-t border-slate-800/60 ${collapsed && !mobileDrawerOpen ? 'p-2' : 'p-4'}`}>
+          {collapsed && !mobileDrawerOpen ? (
+            <Tooltip title={user.email} placement="right">
+              <div className="flex justify-center">
+                <Avatar size={36} style={{ background: '#0D9488', fontWeight: 600, fontSize: 13 }}>
+                  {userInitials}
+                </Avatar>
+              </div>
+            </Tooltip>
+          ) : (
+            <div className="rounded-lg border border-slate-800 bg-slate-800/40 p-3">
+              <div className="flex items-center gap-3">
+                <Avatar size={36} style={{ background: '#0D9488', fontWeight: 600, fontSize: 13 }}>
+                  {userInitials}
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-semibold text-white">{user.email}</div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                    Administrator
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
-    </>
+    </div>
   );
 
   return (
@@ -270,7 +291,7 @@ export default function AdminLayout() {
         width={260}
         closable={false}
         styles={{
-          body: { padding: 0, background: '#0F172A', position: 'relative', minHeight: '100%' },
+          body: { padding: 0, background: '#0F172A', height: '100%' },
         }}
         className="lg:!hidden"
       >
@@ -284,9 +305,8 @@ export default function AdminLayout() {
         collapsed={collapsed}
         width={248}
         collapsedWidth={76}
-        className="dark-scrollbar !hidden lg:!block"
+        className="!hidden lg:!block"
         style={{
-          overflow: 'auto',
           height: '100vh',
           position: 'sticky',
           top: 0,
@@ -468,7 +488,7 @@ export default function AdminLayout() {
           </div>
         </Header>
 
-        <Content style={{ padding: '28px 32px', minHeight: 'calc(100vh - 64px)' }}>
+        <Content className="!p-4 sm:!px-8 sm:!py-7" style={{ minHeight: 'calc(100vh - 64px)', minWidth: 0 }}>
           <ReadOnlyBanner />
           {/*
             Inner Suspense — catches lazy route chunks WITHOUT unmounting

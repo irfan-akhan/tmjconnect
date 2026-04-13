@@ -386,12 +386,12 @@ export default function UsersPage() {
             value={filters.search}
             onChange={(e) => setFilter('search', e.target.value)}
             allowClear
-            style={{ width: 280 }}
+            className="w-full sm:!w-[280px]"
           />
           <Select
             placeholder="Role"
             allowClear
-            style={{ width: 140 }}
+            className="w-full sm:!w-[140px]"
             value={filters.role || undefined}
             onChange={(v) => setFilter('role', v ?? '')}
             options={[
@@ -403,7 +403,7 @@ export default function UsersPage() {
           <Select
             placeholder="Status"
             allowClear
-            style={{ width: 140 }}
+            className="w-full sm:!w-[140px]"
             value={filters.status || undefined}
             onChange={(v) => setFilter('status', v ?? '')}
             options={[
@@ -413,6 +413,7 @@ export default function UsersPage() {
           />
           <DatePicker.RangePicker
             value={dateRange}
+            className="w-full sm:!w-auto"
             onChange={(range) => {
               setFilter('from', range?.[0]?.format('YYYY-MM-DD') ?? '');
               setFilter('to', range?.[1]?.format('YYYY-MM-DD') ?? '');
@@ -440,6 +441,7 @@ export default function UsersPage() {
           loading={isLoading}
           size={density === 'compact' ? 'small' : 'middle'}
           sticky
+          scroll={{ x: 'max-content' }}
           rowSelection={{
             selectedRowKeys,
             onChange: setSelectedRowKeys,

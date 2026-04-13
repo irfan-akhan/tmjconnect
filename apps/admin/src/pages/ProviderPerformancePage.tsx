@@ -167,6 +167,7 @@ export default function ProviderPerformancePage() {
             dataSource={data}
             loading={isLoading}
             sticky
+            scroll={{ x: 'max-content' }}
             onChange={(_, __, sorter) => {
               const s = Array.isArray(sorter) ? sorter[0] : sorter;
               if (s.field) {

@@ -91,6 +91,7 @@ export default function FeatureFlagsPage() {
           dataSource={flags}
           loading={isLoading}
           sticky
+          scroll={{ x: 'max-content' }}
           pagination={false}
           columns={[
             {

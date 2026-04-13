@@ -228,6 +228,7 @@ export default function LoginEventsPage() {
           loading={isLoading}
           size={density === 'compact' ? 'small' : 'middle'}
           sticky
+          scroll={{ x: 'max-content' }}
           pagination={{
             ...pagination,
             showSizeChanger: true,

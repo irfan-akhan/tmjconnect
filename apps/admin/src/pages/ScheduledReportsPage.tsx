@@ -98,6 +98,7 @@ export default function ScheduledReportsPage() {
           dataSource={data}
           loading={isLoading}
           sticky
+          scroll={{ x: 'max-content' }}
           pagination={{
             current: meta.page,
             pageSize: meta.limit,

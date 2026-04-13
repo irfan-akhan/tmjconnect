@@ -152,6 +152,7 @@ export default function PatientEngagementPage() {
             dataSource={data}
             loading={isLoading}
             sticky
+            scroll={{ x: 'max-content' }}
             pagination={{
               current: meta.page,
               pageSize: meta.limit,

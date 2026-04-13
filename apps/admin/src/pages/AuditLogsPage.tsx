@@ -499,6 +499,7 @@ export default function AuditLogsPage() {
           loading={isLoading}
           size={density === 'compact' ? 'small' : 'middle'}
           sticky
+          scroll={{ x: 'max-content' }}
           rowClassName={() => 'cursor-pointer'}
           onRow={(record) => ({
             onClick: () => setDrawerEntry(record as AuditLogRow),
