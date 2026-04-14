@@ -1,0 +1,262 @@
+/* ─── Inter font (must precede @tailwind) ────────────────────────────────── */
+@import url('https://rsms.me/inter/inter.css');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+@supports (font-variation-settings: normal) {
+  html { font-family: 'Inter var', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+}
+
+body {
+  margin: 0;
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #F8FAFC;
+  color: #1E293B;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+html.dark body {
+  background: #030712;
+  color: #E2E8F0;
+}
+
+/* ─── Custom scrollbar — premium feel ───────────────────────────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; background-clip: padding-box; }
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  background-clip: padding-box;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+  background-clip: padding-box;
+}
+
+/* Sidebar uses a darker scrollbar */
+.dark-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  background-clip: padding-box;
+}
+.dark-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; background-clip: padding-box; }
+
+/* ─── Antd component refinements ────────────────────────────────────────── */
+
+/* Make sider menu items feel like a modern app, not classic antd */
+.ant-layout-sider .ant-menu-item {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Tighter table headers */
+.ant-table-thead > tr > th {
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748B !important;
+}
+html.dark .ant-table-thead > tr > th {
+  color: #64748B !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+html.dark .ant-table-thead > tr > th::before {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Dark-mode table body */
+html.dark .ant-table {
+  background: transparent !important;
+}
+html.dark .ant-table-tbody > tr > td {
+  border-bottom-color: rgba(255, 255, 255, 0.05) !important;
+}
+html.dark .ant-table-tbody > tr:hover > td {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+html.dark .ant-table-row-selected > td {
+  background: rgba(20, 184, 166, 0.06) !important;
+}
+
+/* Dark-mode pagination */
+html.dark .ant-pagination-item {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark .ant-pagination-item a {
+  color: #94A3B8 !important;
+}
+html.dark .ant-pagination-item-active {
+  border-color: #0D9488 !important;
+}
+html.dark .ant-pagination-item-active a {
+  color: #5EEAD4 !important;
+}
+
+/* Card hover lift */
+.card-hover {
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.04);
+  transform: translateY(-1px);
+}
+html.dark .card-hover:hover {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 16px -4px rgba(0, 0, 0, 0.5);
+  transform: translateY(-1px);
+}
+
+/* Stronger focus ring on the brand color, used by all interactive elements */
+:focus-visible {
+  outline: 2px solid #14B8A6;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.ant-input:focus-visible,
+.ant-select-selector:focus-visible {
+  outline: none;
+}
+
+/* ─── Custom utility classes ────────────────────────────────────────────── */
+
+.bg-dotted-grid {
+  background-image: radial-gradient(rgb(255 255 255 / 0.08) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.bg-brand-gradient {
+  background: linear-gradient(135deg, #0F766E 0%, #134E4A 100%);
+}
+
+/* Inline KPI trend badge */
+.trend-up { color: #047857; background: #ECFDF5; }
+.trend-down { color: #B91C1C; background: #FEF2F2; }
+.trend-flat { color: #475569; background: #F1F5F9; }
+
+html.dark .trend-up { color: #6EE7B7; background: rgba(16, 185, 129, 0.12); }
+html.dark .trend-down { color: #FCA5A5; background: rgba(239, 68, 68, 0.12); }
+html.dark .trend-flat { color: #94A3B8; background: rgba(255, 255, 255, 0.06); }
+
+/* ─── Dark-mode antd overrides ─────────────────────────────────────────── */
+
+/* Toasts */
+html.dark .ant-message-notice-content {
+  background: #1E293B !important;
+  color: #E2E8F0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5);
+}
+html.dark .ant-message .anticon {
+  filter: brightness(1.15);
+}
+
+/* Alerts in dark mode */
+html.dark .ant-alert {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Select dropdowns */
+html.dark .ant-select-dropdown {
+  background: #1E293B !important;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .ant-select-item-option-selected {
+  background: rgba(20, 184, 166, 0.12) !important;
+}
+html.dark .ant-select-item-option-active {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Date picker popup */
+html.dark .ant-picker-dropdown .ant-picker-panel-container {
+  background: #1E293B !important;
+}
+
+/* Modal */
+html.dark .ant-modal-content {
+  background: #0F172A !important;
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.6) !important;
+}
+html.dark .ant-modal-header {
+  background: #0F172A !important;
+}
+html.dark .ant-modal-footer {
+  border-top-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Drawer */
+html.dark .ant-drawer-content {
+  background: #0F172A !important;
+}
+html.dark .ant-drawer-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Tabs */
+html.dark .ant-tabs-nav::before {
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Popover */
+html.dark .ant-popover-inner {
+  background: #1E293B !important;
+}
+
+/* Checkbox */
+html.dark .ant-checkbox-inner {
+  background: #1E293B !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+html.dark .ant-checkbox-checked .ant-checkbox-inner {
+  background: #0D9488 !important;
+  border-color: #0D9488 !important;
+}
+
+/* Divider */
+html.dark .ant-divider {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Empty state */
+html.dark .ant-empty-description {
+  color: #64748B !important;
+}
+
+/* ─── Recently-viewed flash highlight ───────────────────────────────────── */
+@keyframes focusFlash {
+  0%   { box-shadow: 0 0 0 0 rgb(20 184 166 / 0.45); }
+  40%  { box-shadow: 0 0 0 8px rgb(20 184 166 / 0.20); }
+  100% { box-shadow: 0 0 0 0 rgb(20 184 166 / 0); }
+}
+.flash-focus {
+  animation: focusFlash 1.4s cubic-bezier(0.16, 1, 0.3, 1) 1;
+  border-radius: 12px;
+}
+
+/* ─── Animation utilities ───────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pageEnter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.page-enter {
+  animation: pageEnter 0.15s ease-out both;
+}
