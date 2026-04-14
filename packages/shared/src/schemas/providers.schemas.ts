@@ -12,6 +12,7 @@ export const updateProviderProfileSchema = z.object({
   specialty: z.string().max(100).optional(),
   clinic_name: z.string().max(200).optional(),
   credentials: z.array(z.string().max(100)).max(20).optional().nullable(),
+  avatar_url: z.string().url().max(500).optional().nullable(),
 });
 
 // ─── Patient list query ────────────────────────────────────────────────────────────

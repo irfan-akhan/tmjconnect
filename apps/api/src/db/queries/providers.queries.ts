@@ -56,6 +56,7 @@ export async function updateProviderProfile(
     city?: string | null;
     state?: string | null;
     timezone?: string;
+    avatar_url?: string | null;
   },
   providerFields: {
     license_number?: string;

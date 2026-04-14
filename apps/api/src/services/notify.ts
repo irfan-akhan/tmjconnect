@@ -46,6 +46,7 @@ const CHANNEL_MAP: Record<NotificationType, { push: boolean; email: boolean; sms
   weekly_summary:     { push: true,  email: true,  sms: false },
   account_locked:     { push: false, email: true,  sms: false },
   streak_milestone:   { push: true,  email: false, sms: false },
+  report_requested:   { push: true,  email: true,  sms: false },
 };
 
 /**

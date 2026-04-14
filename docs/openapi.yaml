@@ -406,6 +406,44 @@ components:
         submitted_at: { type: string, format: date-time }
         viewed_at: { type: [string, "null"], format: date-time }
         reviewed_at: { type: [string, "null"], format: date-time }
+        authored_by_user_id:
+          type: [string, "null"]
+          format: uuid
+          description: "Who authored the row. Equals patient_id for patient-submitted reports; equals provider_id for on-behalf-of reports."
+        authored_by_role:
+          type: string
+          enum: [patient, provider]
+          description: "Provenance flag. 'provider' = filed on-behalf-of via /providers/patients/:id/reports."
+
+    ClinicalNote:
+      description: Provider-authored note about a patient. Never returned in patient-facing responses.
+      type: object
+      required: [id, patient_id, body, tags, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        provider_id: { type: [string, "null"], format: uuid, description: "NULL if provider was deleted" }
+        body: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ReportRequest:
+      description: Provider-to-patient nudge asking for a report. Fulfilled when a linked report is filed.
+      type: object
+      required: [id, patient_id, prompt, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        provider_id: { type: [string, "null"], format: uuid }
+        patient_id: { type: string, format: uuid }
+        prompt: { type: string, maxLength: 2000 }
+        status: { type: string, enum: [pending, fulfilled, dismissed] }
+        fulfilled_report_id: { type: [string, "null"], format: uuid }
+        fulfilled_at: { type: [string, "null"], format: date-time }
+        dismissed_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
 
     ReportSummaryData:
       description: Auto-generated stats snapshot at time of report submission
@@ -1119,6 +1157,52 @@ paths:
       responses:
         '200': { description: Preferences updated }
 
+  /patients/me/export:
+    get:
+      tags: [Patients]
+      summary: HIPAA right-of-access — full PHI export
+      description: >
+        Synchronous bundle of every record referencing the signed-in patient.
+        Excludes provider-private surfaces (clinical_notes, report_responses.internal_notes).
+        Returns JSON with Content-Disposition: attachment for direct download.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: PHI bundle
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: 'attachment; filename="tmjconnect-export-<id>-<date>.json"'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      meta:
+                        type: object
+                        properties:
+                          exported_at: { type: string, format: date-time }
+                          format: { type: string, example: tmjconnect.v1.export }
+                          notice: { type: string }
+                      account: { type: object }
+                      profile: { type: object }
+                      symptom_logs: { type: array, items: { type: object } }
+                      reports:
+                        type: array
+                        items: { $ref: '#/components/schemas/Report' }
+                      report_responses: { type: array, items: { type: object } }
+                      exercise_assignments: { type: array, items: { type: object } }
+                      exercise_completions: { type: array, items: { type: object } }
+                      provider_links: { type: array, items: { type: object } }
+                      reminders: { type: array, items: { type: object } }
+                      notification_preferences: { type: [object, "null"] }
+                      report_requests:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReportRequest' }
+
   # ──────────────────────────── SYMPTOMS ────────────────────────────
   /symptoms:
     post:
@@ -1772,6 +1856,276 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '200': { description: Flag toggled }
+
+  /reports/requests:
+    get:
+      tags: [Reports]
+      summary: List report requests (role-aware)
+      description: Patients see their own pending requests. Providers see their sent requests, with optional filters.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, fulfilled, dismissed] }
+        - name: patient_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReportRequest' }
+
+  /reports/requests/{id}:
+    delete:
+      tags: [Reports]
+      summary: Dismiss a pending report request (either party)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Dismissed }
+        '403': { description: Not allowed to dismiss this request }
+        '409': { description: Request is not pending }
+
+  # ─── Provider-only: clinical notes + report requests + on-behalf-of reports ───
+  /providers/patients/{patientId}/notes:
+    get:
+      tags: [Providers]
+      summary: List clinical notes for a patient (provider-scoped; never patient-visible)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ClinicalNote' }
+                  meta: { $ref: '#/components/schemas/OffsetMeta' }
+    post:
+      tags: [Providers]
+      summary: Create a clinical note (provider-only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 10000 }
+                tags:
+                  type: array
+                  maxItems: 20
+                  items: { type: string, maxLength: 50 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ClinicalNote' }
+
+  /providers/notes/{noteId}:
+    patch:
+      tags: [Providers]
+      summary: Update a clinical note
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: noteId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body: { type: string, maxLength: 10000 }
+                tags:
+                  type: array
+                  items: { type: string, maxLength: 50 }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ClinicalNote' }
+    delete:
+      tags: [Providers]
+      summary: Delete a clinical note
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: noteId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+
+  /providers/patients/{patientId}/report-requests:
+    get:
+      tags: [Providers]
+      summary: List report requests sent to this patient (provider-scoped)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReportRequest' }
+    post:
+      tags: [Providers]
+      summary: Request a report from a patient
+      description: Persists a pending request and enqueues a `report_requested` notification.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string, maxLength: 2000 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReportRequest' }
+
+  /providers/dashboard/summary:
+    get:
+      tags: [Providers]
+      summary: Dashboard aggregate (single round-trip replacing 4 list calls)
+      description: Returns counts + recent patients + urgent inbox. Frontend dashboard hits this instead of fanning out.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      activePatients: { type: integer }
+                      unreadReports: { type: integer }
+                      pendingCodes: { type: integer }
+                      urgentReports: { type: integer }
+                      recentPatients:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            patient_id: { type: string, format: uuid }
+                            first_name: { type: string }
+                            last_name: { type: string }
+                            last_symptom_at: { type: [string, "null"], format: date-time }
+                      urgentInbox:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReportInboxItem' }
+
+  /providers/patients/{patientId}/reports:
+    post:
+      tags: [Providers]
+      summary: File a report on behalf of a patient
+      description: >
+        Creates a report with `authored_by_role='provider'`. Use when the patient
+        can't file directly (phone call, in-person visit, escalation).
+        Pass `fulfilling_request_id` to close out a pending report_request atomically.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [urgency, description]
+              properties:
+                urgency: { type: string, enum: [routine, concerning, urgent] }
+                pain_level:
+                  type: integer
+                  minimum: 0
+                  maximum: 10
+                  nullable: true
+                description: { type: string, maxLength: 10000 }
+                photo_url: { type: string, format: uri, nullable: true }
+                period_start: { type: string, format: date-time, nullable: true }
+                period_end: { type: string, format: date-time, nullable: true }
+                patient_notes: { type: string, maxLength: 5000, nullable: true }
+                fulfilling_request_id: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Report' }
 
   # ──────────────────────────── LINKING ────────────────────────────
   /linking/links:

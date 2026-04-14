@@ -43,11 +43,20 @@ export type ReportInsertData = {
   pain_level?: number | null;
   description: string;
   photo_url?: string | null;
-  period_start?: Date | null;
-  period_end?: Date | null;
+  period_start?: Date | string | null;
+  period_end?: Date | string | null;
   summary_data?: Record<string, unknown>;
   patient_notes?: string | null;
+  // Provenance (migration 0007). Defaults to patient authorship when omitted —
+  // callers building provider-on-behalf-of rows pass these explicitly.
+  authored_by_user_id?: string | null;
+  authored_by_role?: 'patient' | 'provider';
 };
+
+function coerceDate(v: Date | string | null | undefined): Date | null {
+  if (v == null) return null;
+  return v instanceof Date ? v : new Date(v);
+}
 
 export async function insertReport(db: DbClient, data: ReportInsertData) {
   const [row] = await db
@@ -59,10 +68,12 @@ export async function insertReport(db: DbClient, data: ReportInsertData) {
       pain_level: data.pain_level ?? null,
       description: data.description,
       photo_url: data.photo_url ?? null,
-      period_start: data.period_start ?? null,
-      period_end: data.period_end ?? null,
+      period_start: coerceDate(data.period_start),
+      period_end: coerceDate(data.period_end),
       summary_data: data.summary_data ?? {},
       patient_notes: data.patient_notes ?? null,
+      authored_by_user_id: data.authored_by_user_id ?? data.patient_id,
+      authored_by_role: data.authored_by_role ?? 'patient',
     })
     .returning();
   return row;
@@ -88,10 +99,12 @@ export async function insertReportWithIdempotencyKey(
         pain_level: data.pain_level ?? null,
         description: data.description,
         photo_url: data.photo_url ?? null,
-        period_start: data.period_start ?? null,
-        period_end: data.period_end ?? null,
+        period_start: coerceDate(data.period_start),
+        period_end: coerceDate(data.period_end),
         summary_data: data.summary_data ?? {},
         patient_notes: data.patient_notes ?? null,
+        authored_by_user_id: data.authored_by_user_id ?? data.patient_id,
+        authored_by_role: data.authored_by_role ?? 'patient',
       })
       .returning();
 

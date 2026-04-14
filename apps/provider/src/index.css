@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Aesthetic: editorial-clinical.
+ * Warm bone paper + deep ink + ochre accent. Fraunces display, Plex body.
+ * Calm, precise, confidence-inspiring — not SaaS-generic.
+ */
+
+@layer base {
+  :root {
+    --background: 38 30% 97%;        /* warm bone */
+    --foreground: 220 28% 12%;       /* deep ink */
+    --card: 38 32% 99%;
+    --card-foreground: 220 28% 12%;
+    --popover: 38 32% 99%;
+    --popover-foreground: 220 28% 12%;
+    --primary: 220 28% 12%;          /* ink = primary action */
+    --primary-foreground: 38 30% 97%;
+    --secondary: 38 22% 92%;
+    --secondary-foreground: 220 28% 12%;
+    --muted: 38 22% 93%;
+    --muted-foreground: 220 12% 42%;
+    --accent: 33 85% 52%;            /* ochre */
+    --accent-foreground: 38 30% 97%;
+    --destructive: 3 72% 48%;
+    --destructive-foreground: 38 30% 97%;
+    --border: 38 18% 84%;
+    --input: 38 18% 84%;
+    --ring: 33 85% 52%;
+    --radius: 0.375rem;
+  }
+
+  .dark {
+    --background: 220 28% 8%;        /* ink */
+    --foreground: 38 28% 92%;        /* paper */
+    --card: 220 26% 11%;
+    --card-foreground: 38 28% 92%;
+    --popover: 220 26% 11%;
+    --popover-foreground: 38 28% 92%;
+    --primary: 38 30% 92%;
+    --primary-foreground: 220 28% 12%;
+    --secondary: 220 20% 16%;
+    --secondary-foreground: 38 28% 92%;
+    --muted: 220 20% 14%;
+    --muted-foreground: 38 12% 62%;
+    --accent: 33 82% 58%;
+    --accent-foreground: 220 28% 8%;
+    --destructive: 3 72% 55%;
+    --destructive-foreground: 38 30% 97%;
+    --border: 220 18% 20%;
+    --input: 220 18% 20%;
+    --ring: 33 82% 58%;
+  }
+
+  * { @apply border-border; }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'ss01', 'cv11', 'kern';
+    background-image:
+      radial-gradient(hsl(var(--foreground) / 0.025) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  h1, h2, h3 {
+    @apply font-serif tracking-tightest;
+    font-optical-sizing: auto;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+}
+
+@layer utilities {
+  .rule {
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--border)) 0,
+      hsl(var(--border)) 6px,
+      transparent 6px,
+      transparent 12px
+    );
+    background-size: 12px 1px;
+    background-repeat: repeat-x;
+    background-position: 0 50%;
+  }
+
+  .grain::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+}

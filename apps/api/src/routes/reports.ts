@@ -3,13 +3,20 @@ import type { Container } from '../config/container';
 import { authenticate, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
-import { submitReportSchema, respondToReportSchema, reportInboxQuerySchema } from '@tmjconnect/shared';
+import {
+  submitReportSchema,
+  respondToReportSchema,
+  reportInboxQuerySchema,
+  reportRequestListQuerySchema,
+} from '@tmjconnect/shared';
 import * as Submit from '../use-cases/reports/submit';
 import * as ProviderInbox from '../use-cases/reports/provider-inbox';
 import * as GetReport from '../use-cases/reports/get-report';
 import * as Respond from '../use-cases/reports/respond';
 import * as Review from '../use-cases/reports/review';
 import * as Flag from '../use-cases/reports/flag';
+import * as ListRequests from '../use-cases/reports/list-requests';
+import * as DismissRequest from '../use-cases/reports/dismiss-request';
 
 export function reportsRouter(container: Container) {
   const router = Router();
@@ -45,6 +52,49 @@ export function reportsRouter(container: Container) {
         };
         const result = await ProviderInbox.execute(container, { providerId: req.user!.id, page, limit, ...filters });
         res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── Report requests ────────────────────────────────────────────────────────
+  // Must be declared BEFORE `/:id` routes — otherwise Express matches
+  // `/requests` to `/:id` with id='requests' and 500s on the UUID parse.
+  router.get(
+    '/requests',
+    validate(reportRequestListQuerySchema, 'query'),
+    auditLog('report_requests_listed', 'report_request'),
+    async (req, res, next) => {
+      try {
+        if (req.user!.role === 'patient') {
+          const data = await ListRequests.executeForPatient(container, req.user!.id);
+          res.json({ data });
+          return;
+        }
+        const { status, patient_id } = req.query as unknown as {
+          status?: 'pending' | 'fulfilled' | 'dismissed';
+          patient_id?: string;
+        };
+        const data = await ListRequests.executeForProvider(container, {
+          providerId: req.user!.id,
+          patientId: patient_id,
+          status,
+        });
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.delete(
+    '/requests/:id',
+    auditLog('report_request_dismissed', 'report_request'),
+    async (req, res, next) => {
+      try {
+        await DismissRequest.execute(container, {
+          userId: req.user!.id,
+          role: req.user!.role as 'patient' | 'provider',
+          requestId: req.params.id,
+        });
+        res.status(204).send();
       } catch (err) { next(err); }
     },
   );

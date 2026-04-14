@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   check,
+  varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users';
@@ -19,6 +20,11 @@ export const reportStatusEnum = pgEnum('report_status', [
   'viewed',
   'reviewed',
   'responded',
+]);
+export const reportRequestStatusEnum = pgEnum('report_request_status', [
+  'pending',
+  'fulfilled',
+  'dismissed',
 ]);
 
 // ─── symptom_logs ─────────────────────────────────────────────────────────────────
@@ -82,6 +88,11 @@ export const reports = pgTable('reports', {
   submitted_at: timestamp('submitted_at', { withTimezone: true }).notNull().default(sql`NOW()`),
   viewed_at: timestamp('viewed_at', { withTimezone: true }),
   reviewed_at: timestamp('reviewed_at', { withTimezone: true }),
+  // Provenance columns (migration 0007). For a provider on-behalf-of report,
+  // authored_by_user_id is the provider and authored_by_role is 'provider'.
+  // For patient-submitted reports, authored_by_user_id equals patient_id.
+  authored_by_user_id: uuid('authored_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  authored_by_role: varchar('authored_by_role', { length: 20 }).notNull().default('patient'),
 }, (table) => ({
   painLevelCheck: check('report_pain_level_range', sql`${table.pain_level} IS NULL OR ${table.pain_level} BETWEEN 0 AND 10`),
 }));
@@ -102,4 +113,32 @@ export const reportResponses = pgTable('report_responses', {
   // Provider-only. NEVER returned in patient-facing responses. Omitted at query level.
   internal_notes: text('internal_notes'),
   responded_at: timestamp('responded_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+});
+
+// ─── clinical_notes ──────────────────────────────────────────────────────────────
+// Provider-authored notes ABOUT a patient. Never visible to the patient.
+// Migration 0007.
+export const clinicalNotes = pgTable('clinical_notes', {
+  id: uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  patient_id: uuid('patient_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider_id: uuid('provider_id').references(() => users.id, { onDelete: 'set null' }),
+  body: text('body').notNull(),
+  tags: text('tags').array().notNull().default(sql`'{}'`),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+});
+
+// ─── report_requests ─────────────────────────────────────────────────────────────
+// Provider-initiated nudge asking a patient to file a report. Fulfilled when the
+// patient submits a report linked back via fulfilled_report_id. Migration 0007.
+export const reportRequests = pgTable('report_requests', {
+  id: uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  provider_id: uuid('provider_id').references(() => users.id, { onDelete: 'set null' }),
+  patient_id: uuid('patient_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  prompt: text('prompt').notNull(),
+  status: reportRequestStatusEnum('status').notNull().default('pending'),
+  fulfilled_report_id: uuid('fulfilled_report_id').references(() => reports.id, { onDelete: 'set null' }),
+  fulfilled_at: timestamp('fulfilled_at', { withTimezone: true }),
+  dismissed_at: timestamp('dismissed_at', { withTimezone: true }),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
 });

@@ -11,6 +11,7 @@
     "test": "npm run test --workspaces --if-present",
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:admin": "npm run dev --workspace=apps/admin",
+    "dev:provider": "npm run dev --workspace=apps/provider",
     "lint": "npm run lint --workspaces --if-present"
   },
   "engines": {

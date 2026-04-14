@@ -13,6 +13,11 @@ import {
   updateAssignmentSchema,
   symptomListQuerySchema,
   reportInboxQuerySchema,
+  createClinicalNoteSchema,
+  updateClinicalNoteSchema,
+  noteListQuerySchema,
+  createReportRequestSchema,
+  providerCreateReportSchema,
 } from '@tmjconnect/shared';
 import { parseCursorPagination, buildCursorMeta } from '../utils/pagination';
 import * as GetProfile from '../use-cases/providers/get-profile';
@@ -31,6 +36,14 @@ import * as CreateAssignment from '../use-cases/providers/create-assignment';
 import * as UpdateAssignment from '../use-cases/providers/update-assignment';
 import * as DeleteAssignment from '../use-cases/providers/delete-assignment';
 import * as ListPatientAssignments from '../use-cases/providers/list-patient-assignments';
+import * as ListPatientNotes from '../use-cases/providers/list-patient-notes';
+import * as CreateNote from '../use-cases/providers/create-note';
+import * as UpdateNote from '../use-cases/providers/update-note';
+import * as DeleteNote from '../use-cases/providers/delete-note';
+import * as CreateRequest from '../use-cases/reports/create-request';
+import * as ListRequests from '../use-cases/reports/list-requests';
+import * as ProviderCreateReport from '../use-cases/reports/provider-create-report';
+import * as DashboardSummary from '../use-cases/providers/dashboard-summary';
 
 export function providersRouter(container: Container) {
   const router = Router();
@@ -38,6 +51,14 @@ export function providersRouter(container: Container) {
   // checkSessionTimeout refreshes last_active on every authenticated request OR
   // deletes the session and returns 401 SESSION_TIMEOUT if it has gone stale.
   router.use(authenticate, authorize('provider'), checkSessionTimeout(container.db));
+
+  // ─── Dashboard summary (single round trip replacing 4 list calls) ───────────
+  router.get('/dashboard/summary', async (req, res, next) => {
+    try {
+      const data = await DashboardSummary.execute(container, { providerId: req.user!.id });
+      res.json({ data });
+    } catch (err) { next(err); }
+  });
 
   // ─── Profile ─────────────────────────────────────────────────────────────────
   router.get('/me', async (req, res, next) => {
@@ -207,6 +228,127 @@ export function providersRouter(container: Container) {
       res.status(204).send();
     } catch (err) { next(err); }
   });
+
+  // ─── Clinical notes (provider-only, never patient-visible) ──────────────────
+  router.get(
+    '/patients/:patientId/notes',
+    validate(noteListQuerySchema, 'query'),
+    auditLog('provider_listed_notes', 'clinical_note'),
+    async (req, res, next) => {
+      try {
+        const { page, limit } = req.query as unknown as { page: number; limit: number };
+        const result = await ListPatientNotes.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+          page,
+          limit,
+        });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.post(
+    '/patients/:patientId/notes',
+    validate(createClinicalNoteSchema),
+    auditLog('clinical_note_created', 'clinical_note'),
+    async (req, res, next) => {
+      try {
+        const data = await CreateNote.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+          body: req.body.body,
+          tags: req.body.tags ?? [],
+        });
+        res.locals.auditResourceId = data.id;
+        res.status(201).json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.patch(
+    '/notes/:noteId',
+    validate(updateClinicalNoteSchema),
+    auditLog('clinical_note_updated', 'clinical_note'),
+    async (req, res, next) => {
+      try {
+        const data = await UpdateNote.execute(container, {
+          providerId: req.user!.id,
+          noteId: req.params.noteId,
+          fields: req.body,
+        });
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.delete(
+    '/notes/:noteId',
+    auditLog('clinical_note_deleted', 'clinical_note'),
+    async (req, res, next) => {
+      try {
+        await DeleteNote.execute(container, { providerId: req.user!.id, noteId: req.params.noteId });
+        res.status(204).send();
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── Report requests (provider → patient nudge) ─────────────────────────────
+  router.get(
+    '/patients/:patientId/report-requests',
+    auditLog('provider_listed_report_requests', 'report_request'),
+    async (req, res, next) => {
+      try {
+        const data = await ListRequests.executeForProvider(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+        });
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.post(
+    '/patients/:patientId/report-requests',
+    validate(createReportRequestSchema),
+    auditLog('report_request_created', 'report_request'),
+    async (req, res, next) => {
+      try {
+        const data = await CreateRequest.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+          prompt: req.body.prompt,
+        });
+        res.locals.auditResourceId = data.id;
+        res.status(201).json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── On-behalf-of report ────────────────────────────────────────────────────
+  router.post(
+    '/patients/:patientId/reports',
+    validate(providerCreateReportSchema),
+    auditLog('report_created_on_behalf', 'report'),
+    async (req, res, next) => {
+      try {
+        const data = await ProviderCreateReport.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+          urgency: req.body.urgency,
+          pain_level: req.body.pain_level,
+          description: req.body.description,
+          photo_url: req.body.photo_url,
+          period_start: req.body.period_start,
+          period_end: req.body.period_end,
+          patient_notes: req.body.patient_notes,
+          fulfilling_request_id: req.body.fulfilling_request_id,
+        });
+        res.locals.auditResourceId = data.id;
+        res.status(201).json({ data });
+      } catch (err) { next(err); }
+    },
+  );
 
   return router;
 }

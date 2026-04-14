@@ -43,6 +43,7 @@ export const NOTIFICATION_TYPES = [
   'weekly_summary',
   'account_locked',
   'streak_milestone',
+  'report_requested',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

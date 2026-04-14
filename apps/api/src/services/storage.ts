@@ -117,6 +117,30 @@ async function createS3Driver(env: Env, logger: Logger): Promise<StorageDriver> 
 // ─── Factory ─────────────────────────────────────────────────────────────────────
 
 /**
+ * extractStorageKey — Best-effort reverse of `getUrl(key)`.
+ *
+ * We persist the full public URL on user records (avatar_url, video_url, etc.).
+ * When those records are replaced, we want to delete the old blob — which needs
+ * the key, not the URL. This helper parses it back out by matching the expected
+ * trailing `folder/filename` shape.
+ *
+ * Returns null if the URL doesn't look like one we produced (external URL,
+ * malformed, different host). Callers should treat null as "skip delete".
+ */
+export function extractStorageKey(url: string | null | undefined, folder: string): string | null {
+  if (!url) return null;
+  try {
+    const pathname = new URL(url).pathname;
+    // Match the last occurrence of `/<folder>/<filename>` — tolerates prefixes
+    // like `/uploads/` (local driver) or CloudFront path maps.
+    const match = pathname.match(new RegExp(`/${folder}/([^/?#]+)$`));
+    return match ? `${folder}/${match[1]}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Creates the active storage driver based on STORAGE_DRIVER env var.
  * local: files saved to UPLOAD_DIR, served by Nginx
  * s3: files uploaded to S3_BUCKET, served via CLOUDFRONT_URL

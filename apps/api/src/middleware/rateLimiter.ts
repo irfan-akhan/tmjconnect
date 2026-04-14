@@ -79,6 +79,7 @@ export function createRateLimiters(pool: Pool): {
   mfa: RequestHandler;
   passwordReset: RequestHandler;
   emailVerify: RequestHandler;
+  dataExport: RequestHandler;
 } {
   const base = pgOpts(pool);
 
@@ -130,6 +131,19 @@ export function createRateLimiters(pool: Pool): {
         keyPrefix: 'ev',
         points: RATE_LIMIT_EMAIL_VERIFY_MAX,
         duration: RATE_LIMIT_EMAIL_VERIFY_WINDOW_MS / 1000,
+      }),
+    ),
+
+    // dataExport — throttles /patients/me/export. Export is a full PHI dump,
+    // so we cap to 5 per hour to prevent abuse as a scraping primitive even
+    // though auth scopes it to the caller's own data.
+    dataExport: ipMiddleware(
+      new RateLimiterPostgres({
+        ...base,
+        tableName: 'rl_data_export',
+        keyPrefix: 'export',
+        points: 5,
+        duration: 60 * 60,
       }),
     ),
   };

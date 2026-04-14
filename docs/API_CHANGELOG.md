@@ -2,6 +2,43 @@
 
 All notable changes to the TMJConnect API are documented here.
 
+## v1.1.0 — 2026-04-14
+
+Provider portal support: clinical notes, report requests, provider-authored reports, and avatar upload persistence.
+
+### Added — Clinical notes (provider-only, never patient-visible)
+- `GET  /providers/patients/:patientId/notes?page=&limit=` — list notes for a patient (provider-scoped)
+- `POST /providers/patients/:patientId/notes` — body `{ body, tags[] }`
+- `PATCH /providers/notes/:noteId` — partial update `{ body?, tags? }`
+- `DELETE /providers/notes/:noteId`
+
+### Added — Report requests (provider → patient nudge)
+- `POST /providers/patients/:patientId/report-requests` — body `{ prompt }`; triggers `report_requested` notification
+- `GET  /providers/patients/:patientId/report-requests` — list requests for a patient (provider-scoped)
+- `GET  /reports/requests?status=&patient_id=` — role-aware; patients see their own pending requests, providers see theirs
+- `DELETE /reports/requests/:id` — dismiss (either role within their own scope)
+
+### Added — Provider on-behalf-of reports
+- `POST /providers/patients/:patientId/reports` — body `{ urgency, pain_level?, description, photo_url?, period_start?, period_end?, patient_notes?, fulfilling_request_id? }`. If `fulfilling_request_id` is provided, the matching report_request transitions to `fulfilled`. A `provider_message` notification is sent to the patient.
+
+### Added — Dashboard aggregate
+- `GET /providers/dashboard/summary` — single-call aggregate of `activePatients`, `unreadReports`, `pendingCodes`, `urgentReports`, plus `recentPatients` and `urgentInbox` arrays. Replaces four client-side fan-out queries.
+
+### Added — HIPAA right-of-access
+- `GET /patients/me/export` — authenticated patient pulls a full JSON archive of their records. Synchronous at pilot scale (25–50 users); move to async + signed URL for production. Excludes `clinical_notes` and `report_responses.internal_notes` (provider-private).
+
+### Changed
+- `PATCH /providers/me` — `updateProviderProfileSchema` now accepts `avatar_url` (string URL or null).
+- `reports.authored_by_user_id` + `reports.authored_by_role` columns added (migration 0007). Patient-submitted reports continue to set `authored_by_role='patient'`.
+- `NotificationType` gains `report_requested` (push + email). Non-breaking additive change.
+
+### Migration
+- `0007_clinical_notes_report_requests_on_behalf.sql`
+  - `CREATE TABLE clinical_notes` (id, patient_id, provider_id, body, tags[], timestamps)
+  - `CREATE TYPE report_request_status AS ENUM ('pending','fulfilled','dismissed')`
+  - `CREATE TABLE report_requests` (id, provider_id, patient_id, prompt, status, fulfilled_report_id, fulfilled_at, dismissed_at, created_at)
+  - `ALTER TABLE reports ADD COLUMN authored_by_user_id, authored_by_role`; backfills `authored_by_user_id=patient_id` for historical rows.
+
 ## v1.0.0 — 2026-04-10
 
 Initial API release covering Sprints 1–4.

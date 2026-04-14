@@ -11,6 +11,7 @@ import * as ListSessions from '../use-cases/patients/list-sessions';
 import * as RevokeSession from '../use-cases/patients/revoke-session';
 import * as GetNotificationPrefs from '../use-cases/patients/get-notification-prefs';
 import * as UpdateNotificationPrefs from '../use-cases/patients/update-notification-prefs';
+import * as ExportData from '../use-cases/patients/export-data';
 
 export function patientsRouter(container: Container) {
   const router = Router();
@@ -59,6 +60,24 @@ export function patientsRouter(container: Container) {
       res.json({ data: await UpdateNotificationPrefs.execute(container, { userId: req.user!.id, fields: req.body }) });
     } catch (err) { next(err); }
   });
+
+  // ─── HIPAA right-of-access: full PHI export ─────────────────────────────────
+  // Synchronous export; pilot scale (25–50 users). For production scale, move
+  // to an async job that emits a signed download URL when complete.
+  router.get(
+    '/me/export',
+    auditLog('patient_data_exported', 'user'),
+    async (req, res, next) => {
+      try {
+        const data = await ExportData.execute(container, { patientId: req.user!.id });
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="tmjconnect-export-${req.user!.id}-${new Date().toISOString().slice(0, 10)}.json"`,
+        );
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
 
   return router;
 }
