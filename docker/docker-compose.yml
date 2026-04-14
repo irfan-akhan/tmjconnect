@@ -81,12 +81,32 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # ─── Provider portal (SPA build) ────────────────────────────────────────────
+  # This container builds the provider frontend and exposes its /dist as a
+  # named volume that nginx mounts read-only. It does not serve traffic itself.
+  provider-frontend:
+    image: ghcr.io/your-org/tmjconnect-provider:latest
+    build:
+      context: ..
+      dockerfile: apps/provider/Dockerfile
+    command: ["sh", "-c", "cp -r /usr/share/nginx/html/. /export/ && tail -f /dev/null"]
+    volumes:
+      - provider_dist:/export
+    networks:
+      - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   # ─── Nginx (reverse proxy + SSL + static files) ─────────────────────────────────
   nginx:
     image: nginx:1.25-alpine
     restart: unless-stopped
     depends_on:
       - api
+      - provider-frontend
     ports:
       - "80:80"
       - "443:443"
@@ -94,6 +114,7 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - uploads_data:/data/uploads:ro
       - certbot_certs:/etc/letsencrypt:ro
+      - provider_dist:/usr/share/nginx/html/provider:ro
     networks:
       - internal
     logging:
@@ -121,6 +142,8 @@ volumes:
   certbot_certs:
     driver: local
   certbot_www:
+    driver: local
+  provider_dist:
     driver: local
 
 networks:

@@ -129,6 +129,8 @@ async function bootstrap() {
   app.use(`${API_PREFIX}/auth/reset-password`, rateLimiters.passwordReset);
   app.use(`${API_PREFIX}/auth/verify-email`, rateLimiters.emailVerify);
   app.use(`${API_PREFIX}/auth/resend-verify-email`, rateLimiters.emailVerify);
+  // PHI export is a full dump — slow-tier it (5/hour/IP) separately from the general limiter.
+  app.use(`${API_PREFIX}/patients/me/export`, rateLimiters.dataExport);
 
   app.use(`${API_PREFIX}/auth`, authRouter(container));
 

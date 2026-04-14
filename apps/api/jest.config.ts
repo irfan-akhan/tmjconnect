@@ -6,7 +6,16 @@ const config: Config = {
   rootDir: '.',
   testMatch: ['<rootDir>/tests/**/*.test.ts'],
   transform: {
-    '^.+\\.ts$': ['ts-jest', { tsconfig: './tsconfig.test.json' }],
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: './tsconfig.test.json',
+        // 151002: "hybrid module kind requires isolatedModules". Setting that
+        // flag breaks Jest's CommonJS handling of dynamic imports, so we suppress
+        // the warning instead.
+        diagnostics: { ignoreCodes: [151002] },
+      },
+    ],
   },
   moduleNameMapper: {
     '@tmjconnect/shared': '<rootDir>/../../packages/shared/src',
