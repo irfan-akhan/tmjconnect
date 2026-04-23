@@ -18,6 +18,8 @@ import { uploadsRouter } from './routes/uploads';
 import { reportsRouter } from './routes/reports';
 import { linkingRouter } from './routes/linking';
 import { adminRouter } from './routes/admin';
+import { trackingRouter } from './routes/tracking';
+import { intakeFormsRouter } from './routes/intake-forms';
 import { registerJobs } from './jobs';
 import { API_PREFIX, SHUTDOWN_DRAIN_TIMEOUT_MS } from './config/constants';
 import { sql } from 'drizzle-orm';
@@ -151,6 +153,12 @@ async function bootstrap() {
 
   // ─── Sprint 5 routes ───────────────────────────────────────────────────────────
   app.use(`${API_PREFIX}/admin`, adminRouter(container));
+
+  // ─── Tracking routes (mobility, medications, sleep) ──────────────────────────
+  app.use(`${API_PREFIX}/tracking`, trackingRouter(container));
+
+  // ─── Intake forms (provider-built questionnaires) ──────────────────────────
+  app.use(`${API_PREFIX}/intake-forms`, intakeFormsRouter(container));
 
   // ─── 404 fallthrough ───────────────────────────────────────────────────────────
   app.use((_req, res) => {

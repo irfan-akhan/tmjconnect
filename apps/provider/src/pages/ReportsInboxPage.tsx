@@ -136,16 +136,28 @@ export function ReportsInboxPage() {
             </p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="bg-card/60 p-16 text-center">
-            <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-sm bg-secondary">
-              <Inbox className="h-6 w-6 stroke-[1.5]" />
-            </div>
-            <h2 className="font-serif text-3xl tracking-tightest">Inbox zero.</h2>
-            <p className="mx-auto mt-3 max-w-sm text-sm text-muted-foreground">
-              {status === 'all' && urgency === 'all'
-                ? 'When patients submit reports, they appear here in urgency order.'
-                : 'No reports match these filters.'}
-            </p>
+          <div className="rounded-sm border border-dashed border-border bg-card/60 p-16 text-center">
+            {status === 'all' && urgency === 'all' ? (
+              <>
+                <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+                  <svg className="h-6 w-6 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <h2 className="font-serif text-3xl tracking-tightest">All caught up.</h2>
+                <p className="mx-auto mt-3 max-w-sm text-sm text-muted-foreground">
+                  No new reports from your patients. You'll be notified instantly when a patient submits an urgent report.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-sm bg-secondary">
+                  <Inbox className="h-6 w-6 stroke-[1.5]" />
+                </div>
+                <h2 className="font-serif text-3xl tracking-tightest">No matches.</h2>
+                <p className="mx-auto mt-3 max-w-sm text-sm text-muted-foreground">
+                  No reports match these filters. Try adjusting your selection.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           rows.map((r) => <InboxRowItem key={r.id} r={r} onClick={() => navigate(`/reports/${r.id}`)} />)

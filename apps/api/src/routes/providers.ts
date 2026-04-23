@@ -44,6 +44,9 @@ import * as CreateRequest from '../use-cases/reports/create-request';
 import * as ListRequests from '../use-cases/reports/list-requests';
 import * as ProviderCreateReport from '../use-cases/reports/provider-create-report';
 import * as DashboardSummary from '../use-cases/providers/dashboard-summary';
+import * as GetAnalytics from '../use-cases/providers/get-analytics';
+import * as ListActivity from '../use-cases/providers/list-activity';
+import { getPatientAnalytics } from '../db/queries/patient-analytics.queries';
 
 export function providersRouter(container: Container) {
   const router = Router();
@@ -53,15 +56,24 @@ export function providersRouter(container: Container) {
   router.use(authenticate, authorize('provider'), checkSessionTimeout(container.db));
 
   // ─── Dashboard summary (single round trip replacing 4 list calls) ───────────
-  router.get('/dashboard/summary', async (req, res, next) => {
+  router.get('/dashboard/summary', auditLog('provider_dashboard_viewed', 'user'), async (req, res, next) => {
     try {
       const data = await DashboardSummary.execute(container, { providerId: req.user!.id });
       res.json({ data });
     } catch (err) { next(err); }
   });
 
+  // ─── Analytics (cross-patient aggregations) ────────────────────────────────
+  router.get('/analytics', auditLog('provider_analytics_viewed', 'user'), async (req, res, next) => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 7), 365);
+      const data = await GetAnalytics.execute(container, { providerId: req.user!.id, days });
+      res.json({ data });
+    } catch (err) { next(err); }
+  });
+
   // ─── Profile ─────────────────────────────────────────────────────────────────
-  router.get('/me', async (req, res, next) => {
+  router.get('/me', auditLog('provider_profile_viewed', 'user'), async (req, res, next) => {
     try {
       res.json({ data: await GetProfile.execute(container, { userId: req.user!.id }) });
     } catch (err) { next(err); }
@@ -117,6 +129,19 @@ export function providersRouter(container: Container) {
     },
   );
 
+  // ─── Per-patient analytics (provider-scoped) ─────────────────────────────────
+  router.get(
+    '/patients/:patientId/analytics',
+    auditLog('provider_viewed_patient_analytics', 'user'),
+    async (req, res, next) => {
+      try {
+        const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 7), 365);
+        const data = await getPatientAnalytics(container.db, req.user!.id, req.params.patientId, days);
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
   router.get(
     '/patients/:patientId/reports',
     validate(reportInboxQuerySchema, 'query'),
@@ -147,7 +172,7 @@ export function providersRouter(container: Container) {
   );
 
   // ─── Sessions (security UI) ─────────────────────────────────────────────────
-  router.get('/me/sessions', async (req, res, next) => {
+  router.get('/me/sessions', auditLog('provider_sessions_viewed', 'session'), async (req, res, next) => {
     try {
       res.json({ data: await ListSessions.execute(container, { userId: req.user!.id }) });
     } catch (err) { next(err); }
@@ -167,8 +192,18 @@ export function providersRouter(container: Container) {
     },
   );
 
+  // ─── Activity log (provider-facing audit trail) ──────────────────────────────
+  router.get('/me/activity', auditLog('provider_activity_viewed', 'user'), async (req, res, next) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
+      const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+      const result = await ListActivity.execute(container, { userId: req.user!.id, limit, offset });
+      res.json({ data: result.items, meta: { limit, offset, hasMore: result.hasMore } });
+    } catch (err) { next(err); }
+  });
+
   // ─── Patient assignments (provider manages) ─────────────────────────────────
-  router.get('/patients/:patientId/assignments', async (req, res, next) => {
+  router.get('/patients/:patientId/assignments', auditLog('provider_viewed_patient_assignments', 'exercise_assignment'), async (req, res, next) => {
     try {
       res.json({ data: await ListPatientAssignments.execute(container, { providerId: req.user!.id, patientId: req.params.patientId }) });
     } catch (err) { next(err); }
@@ -201,7 +236,7 @@ export function providersRouter(container: Container) {
   });
 
   // ─── Exercise library ────────────────────────────────────────────────────────
-  router.get('/exercises', validate(exerciseListQuerySchema, 'query'), async (req, res, next) => {
+  router.get('/exercises', validate(exerciseListQuerySchema, 'query'), auditLog('provider_exercises_viewed', 'exercise'), async (req, res, next) => {
     try {
       const { page, limit, category } = req.query as unknown as { page: number; limit: number; category?: string };
       const result = await ListExercises.execute(container, { providerId: req.user!.id, page, limit, category });

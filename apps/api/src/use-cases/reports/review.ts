@@ -9,7 +9,8 @@ export type ReviewInput = { providerId: string; reportId: string };
 export async function execute(deps: Deps, input: ReviewInput) {
   const { db, notify, logger } = deps;
 
-  const report = await getReportForProvider(db, input.reportId, input.providerId);
+  const provider = { id: input.providerId, role: 'provider' as const };
+  const report = await getReportForProvider(db, input.reportId, provider);
   if (!report) throw new AppError(404, 'NOT_FOUND', 'Report not found.');
 
   await markReportReviewed(db, input.reportId);

@@ -16,7 +16,7 @@ export function linkingRouter(container: Container) {
   router.use(authenticate);
 
   // ─── View active links (both roles) ──────────────────────────────────────────
-  router.get('/links', async (req, res, next) => {
+  router.get('/links', auditLog('links_viewed', 'patient_provider_link'), async (req, res, next) => {
     try {
       res.json({ data: await ListLinks.execute(container, { userId: req.user!.id, role: req.user!.role }) });
     } catch (err) { next(err); }
@@ -38,7 +38,7 @@ export function linkingRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.get('/codes', authorize('provider'), async (req, res, next) => {
+  router.get('/codes', authorize('provider'), auditLog('linking_codes_viewed', 'linking_code'), async (req, res, next) => {
     try {
       res.json({ data: await ListCodes.execute(container, { providerId: req.user!.id }) });
     } catch (err) { next(err); }

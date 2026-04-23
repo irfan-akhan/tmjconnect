@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -108,9 +108,9 @@ export function LoginPage() {
                 <Label htmlFor="password" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                   Password
                 </Label>
-                <a href="#" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+                <Link to="/forgot-password" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
                   Forgot
-                </a>
+                </Link>
               </div>
               <Input
                 id="password"
@@ -153,8 +153,11 @@ export function LoginPage() {
           </form>
 
           <div className="mt-10 rule h-px" />
-          <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-            Trouble signing in? Contact your practice administrator.
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Don't have an account?{' '}
+            <Link to="/register" className="font-semibold text-primary hover:underline">
+              Register as Provider
+            </Link>
           </p>
         </div>
       </section>

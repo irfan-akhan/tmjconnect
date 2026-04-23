@@ -23,6 +23,8 @@ export async function getPatientWithProfile(db: Db['db'], userId: string) {
       phone: users.phone,
       role: users.role,
       is_active: users.is_active,
+      email_verified: users.email_verified,
+      mfa_enabled: users.mfa_enabled,
       fcm_token: users.fcm_token,
       created_at: users.created_at,
       first_name: profiles.first_name,
@@ -51,6 +53,7 @@ export async function updatePatientProfile(
     city?: string | null;
     state?: string | null;
     timezone?: string;
+    avatar_url?: string | null;
   },
 ) {
   const filteredFields = Object.fromEntries(

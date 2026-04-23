@@ -7,6 +7,7 @@ type Deps = Pick<Container, 'db'>;
 export type DeleteNoteInput = { providerId: string; noteId: string };
 
 export async function execute(deps: Deps, input: DeleteNoteInput) {
-  const ok = await deleteNote(deps.db, input.noteId, input.providerId);
+  const provider = { id: input.providerId, role: 'provider' as const };
+  const ok = await deleteNote(deps.db, input.noteId, provider);
   if (!ok) throw new AppError(404, 'NOT_FOUND', 'Note not found.');
 }

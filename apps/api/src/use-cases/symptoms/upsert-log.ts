@@ -1,10 +1,11 @@
 import type { Container } from '../../config/container';
 import { upsertSymptomLog } from '../../db/queries/symptoms.queries';
+import type { ScopedUser } from '../../utils/scopedQuery';
 
 type Deps = Pick<Container, 'db'>;
 
 export type UpsertLogInput = {
-  userId: string;
+  user: ScopedUser;
   pain_level: number;
   pain_types: string[];
   body_areas: unknown;
@@ -16,7 +17,7 @@ export type UpsertLogInput = {
 
 export async function execute(deps: Deps, input: UpsertLogInput) {
   const loggedAt = input.logged_at ? new Date(input.logged_at) : new Date();
-  return upsertSymptomLog(deps.db, input.userId, {
+  return upsertSymptomLog(deps.db, input.user, {
     pain_level: input.pain_level,
     pain_types: input.pain_types,
     body_areas: input.body_areas,

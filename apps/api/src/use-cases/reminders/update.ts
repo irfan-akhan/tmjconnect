@@ -2,11 +2,12 @@ import type { Container } from '../../config/container';
 import { AppError } from '../../middleware/errorHandler';
 import { findReminder, updateReminder, getUserTimezone } from '../../db/queries/reminders.queries';
 import { computeNextFireAt } from '../../utils/reminderTime';
+import type { ScopedUser } from '../../utils/scopedQuery';
 
 type Deps = Pick<Container, 'db'>;
 
 export type UpdateReminderInput = {
-  userId: string;
+  user: ScopedUser;
   id: string;
   type?: string;
   time?: string;
@@ -16,9 +17,9 @@ export type UpdateReminderInput = {
 
 export async function execute(deps: Deps, input: UpdateReminderInput) {
   const { db } = deps;
-  const { userId, id, ...body } = input;
+  const { user, id, ...body } = input;
 
-  const existing = await findReminder(db, id, userId);
+  const existing = await findReminder(db, id, user);
   if (!existing) throw new AppError(404, 'NOT_FOUND', 'Reminder not found.');
 
   const updateFields: Record<string, unknown> = { ...body };
@@ -34,12 +35,12 @@ export async function execute(deps: Deps, input: UpdateReminderInput) {
     const newEnabled = body.enabled ?? existing.enabled;
 
     if (newEnabled) {
-      const timezone = await getUserTimezone(db, userId);
+      const timezone = await getUserTimezone(db, user.id);
       updateFields.next_fire_at = computeNextFireAt(newTime, newDays, timezone);
     } else {
       updateFields.next_fire_at = null;
     }
   }
 
-  return updateReminder(db, id, updateFields as Parameters<typeof updateReminder>[2]);
+  return updateReminder(db, id, user, updateFields as Parameters<typeof updateReminder>[3]);
 }

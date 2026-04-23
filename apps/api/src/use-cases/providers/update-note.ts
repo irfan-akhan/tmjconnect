@@ -11,7 +11,8 @@ export type UpdateNoteInput = {
 };
 
 export async function execute(deps: Deps, input: UpdateNoteInput) {
-  const updated = await updateNote(deps.db, input.noteId, input.providerId, input.fields);
+  const provider = { id: input.providerId, role: 'provider' as const };
+  const updated = await updateNote(deps.db, input.noteId, provider, input.fields);
   if (!updated) throw new AppError(404, 'NOT_FOUND', 'Note not found.');
   return updated;
 }

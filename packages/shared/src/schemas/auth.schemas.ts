@@ -7,12 +7,19 @@ const passwordSchema = z
   .regex(/\d/, 'Password must contain at least one digit')
   .regex(/[!@#$%^&*]/, 'Password must contain at least one special character (!@#$%^&*)');
 
+// E.164: leading +, 8–15 digits, first digit non-zero. Required at signup so the
+// number is usable for SMS MFA (Twilio) without a later collection step.
+const phoneSchema = z
+  .string()
+  .regex(/^\+[1-9]\d{7,14}$/, 'Phone must be E.164 format, e.g. +15551234567');
+
 // ─── Register (separate schemas per role — no discriminated union needed) ─────
 export const registerPatientSchema = z.object({
   email: z.string().email().toLowerCase(),
   password: passwordSchema,
   first_name: z.string().min(1).max(100),
   last_name: z.string().min(1).max(100),
+  phone: phoneSchema,
   timezone: z.string().optional(),
 });
 
@@ -21,6 +28,8 @@ export const registerProviderSchema = z.object({
   password: passwordSchema,
   first_name: z.string().min(1).max(100),
   last_name: z.string().min(1).max(100),
+  phone: phoneSchema,
+  date_of_birth: z.string().date('Date of birth must be YYYY-MM-DD format'),
   timezone: z.string().optional(),
   license_number: z.string().min(1).max(100),
   license_type: z.string().min(1).max(100),
@@ -89,6 +98,23 @@ export const resendVerifyEmailSchema = z.object({
 export const changePasswordSchema = z.object({
   current_password: z.string().min(1),
   new_password: passwordSchema,
+});
+
+// ─── Change Email ─────────────────────────────────────────────────────────────────
+// Two-step flow: request emits a verification code to the NEW address; verify
+// confirms the user controls it before we actually rotate the column.
+export const requestEmailChangeSchema = z.object({
+  new_email: z.string().email().toLowerCase(),
+  current_password: z.string().min(1),
+});
+
+export const verifyEmailChangeSchema = z.object({
+  code: z.string().length(6).regex(/^\d{6}$/, 'Code must be 6 digits'),
+});
+
+// ─── TOS acceptance ──────────────────────────────────────────────────────────────
+export const acceptTosSchema = z.object({
+  version: z.string().min(1).max(10),
 });
 
 // ─── FCM Token ────────────────────────────────────────────────────────────────────

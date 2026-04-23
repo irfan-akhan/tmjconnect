@@ -138,7 +138,8 @@ export async function truncateAllTables(): Promise<void> {
           exercises, exercise_assignments, exercise_completions,
           symptom_logs, reports, report_responses,
           notifications, notification_preferences, notification_outbox, reminders,
-          audit_logs, login_events, idempotency_keys
+          audit_logs, login_events, idempotency_keys,
+          jaw_mobility_logs, medication_logs, sleep_logs
         RESTART IDENTITY CASCADE
       `);
 

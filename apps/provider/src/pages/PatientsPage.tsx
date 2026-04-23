@@ -160,9 +160,9 @@ export function PatientsPage() {
             </p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="bg-card/60 p-16 text-center">
-            <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-sm bg-secondary">
-              <Users className="h-6 w-6 stroke-[1.5]" />
+          <div className="rounded-sm border border-dashed border-border bg-card/60 p-16 text-center">
+            <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-sm bg-primary/10">
+              <Users className="h-6 w-6 stroke-[1.5] text-primary" />
             </div>
             <h2 className="font-serif text-3xl tracking-tightest">
               {debouncedSearch ? 'No matches.' : 'No patients yet.'}
@@ -170,8 +170,13 @@ export function PatientsPage() {
             <p className="mx-auto mt-3 max-w-sm text-sm text-muted-foreground">
               {debouncedSearch
                 ? 'Try a different spelling or clear the search.'
-                : "Linking codes invite patients into your practice. They'll appear here the moment they accept."}
+                : 'Invite your first patient by generating an invite code. They\'ll download the app and connect with you.'}
             </p>
+            {!debouncedSearch && (
+              <Button className="mt-6" onClick={() => navigate('/linking')}>
+                Invite your first patient
+              </Button>
+            )}
           </div>
         ) : (
           rows.map((p) => (

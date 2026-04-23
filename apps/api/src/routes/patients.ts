@@ -12,12 +12,20 @@ import * as RevokeSession from '../use-cases/patients/revoke-session';
 import * as GetNotificationPrefs from '../use-cases/patients/get-notification-prefs';
 import * as UpdateNotificationPrefs from '../use-cases/patients/update-notification-prefs';
 import * as ExportData from '../use-cases/patients/export-data';
+import * as ListActivity from '../use-cases/patients/list-activity';
+import * as GetDashboard from '../use-cases/patients/get-dashboard';
 
 export function patientsRouter(container: Container) {
   const router = Router();
   router.use(authenticate, authorize('patient'));
 
-  router.get('/me', async (req, res, next) => {
+  router.get('/dashboard', auditLog('patient_dashboard_viewed', 'user'), async (req, res, next) => {
+    try {
+      res.json({ data: await GetDashboard.execute(container, { user: req.user! }) });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/me', auditLog('patient_profile_viewed', 'user'), async (req, res, next) => {
     try {
       res.json({ data: await GetProfile.execute(container, { userId: req.user!.id }) });
     } catch (err) { next(err); }
@@ -36,9 +44,22 @@ export function patientsRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.get('/me/sessions', async (req, res, next) => {
+  router.get('/me/sessions', auditLog('patient_sessions_viewed', 'session'), async (req, res, next) => {
     try {
       res.json({ data: await ListSessions.execute(container, { userId: req.user!.id }) });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/me/activity', auditLog('patient_activity_viewed', 'user'), async (req, res, next) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
+      const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+      const result = await ListActivity.execute(container, {
+        userId: req.user!.id,
+        limit,
+        offset,
+      });
+      res.json({ data: result.items, meta: { limit, offset, hasMore: result.hasMore } });
     } catch (err) { next(err); }
   });
 
@@ -49,7 +70,7 @@ export function patientsRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.get('/me/notification-preferences', async (req, res, next) => {
+  router.get('/me/notification-preferences', auditLog('patient_notification_prefs_viewed', 'user'), async (req, res, next) => {
     try {
       res.json({ data: await GetNotificationPrefs.execute(container, { userId: req.user!.id }) });
     } catch (err) { next(err); }

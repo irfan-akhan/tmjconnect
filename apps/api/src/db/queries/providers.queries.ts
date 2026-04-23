@@ -30,6 +30,7 @@ export async function getProviderWithProfile(db: DbClient, userId: string) {
       created_at: users.created_at,
       first_name: profiles.first_name,
       last_name: profiles.last_name,
+      date_of_birth: profiles.date_of_birth,
       avatar_url: profiles.avatar_url,
       city: profiles.city,
       state: profiles.state,

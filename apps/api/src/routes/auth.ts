@@ -17,6 +17,9 @@ import {
   resetPasswordSchema,
   resendVerifyEmailSchema,
   changePasswordSchema,
+  acceptTosSchema,
+  requestEmailChangeSchema,
+  verifyEmailChangeSchema,
   fcmTokenSchema,
 } from '@tmjconnect/shared';
 import { DEVICE_INFO_MAX_LENGTH } from '../config/constants';
@@ -36,6 +39,10 @@ import * as ResendVerifyEmail from '../use-cases/auth/resend-verify-email';
 import * as Logout from '../use-cases/auth/logout';
 import * as LogoutAll from '../use-cases/auth/logout-all';
 import * as ChangePassword from '../use-cases/auth/change-password';
+import * as AcceptTos from '../use-cases/auth/accept-tos';
+import * as GetTosStatus from '../use-cases/auth/get-tos-status';
+import * as RequestEmailChange from '../use-cases/auth/request-email-change';
+import * as VerifyEmailChange from '../use-cases/auth/verify-email-change';
 import * as UpdateFcmToken from '../use-cases/auth/update-fcm-token';
 
 function extractDeviceInfo(req: { headers: Record<string, string | string[] | undefined> }): string {
@@ -284,6 +291,60 @@ export function authRouter(container: Container) {
       res.json({ message: 'Password changed successfully.' });
     } catch (err) { next(err); }
   });
+
+  // ─── Change Email (two-step) ───────────────────────────────────────────────
+  router.post(
+    '/change-email/request',
+    authenticate,
+    validate(requestEmailChangeSchema),
+    auditLog('auth.email_change_requested'),
+    async (req, res, next) => {
+      try {
+        const result = await RequestEmailChange.execute(container, {
+          userId: req.user!.id,
+          currentPassword: req.body.current_password,
+          newEmail: req.body.new_email,
+        });
+        res.json({ data: result });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.post(
+    '/change-email/verify',
+    authenticate,
+    validate(verifyEmailChangeSchema),
+    auditLog('auth.email_change_verified'),
+    async (req, res, next) => {
+      try {
+        const result = await VerifyEmailChange.execute(container, {
+          userId: req.user!.id,
+          code: req.body.code,
+        });
+        res.json({ data: result });
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── Terms of Service ──────────────────────────────────────────────────────
+  router.get('/tos/current', authenticate, async (req, res, next) => {
+    try {
+      res.json({ data: await GetTosStatus.execute(container, req.user!.id) });
+    } catch (err) { next(err); }
+  });
+
+  router.post(
+    '/tos/accept',
+    authenticate,
+    validate(acceptTosSchema),
+    auditLog('auth.tos_accepted'),
+    async (req, res, next) => {
+      try {
+        await AcceptTos.execute(container, { userId: req.user!.id, version: req.body.version });
+        res.json({ message: 'Accepted.' });
+      } catch (err) { next(err); }
+    },
+  );
 
   router.patch('/fcm-token', authenticate, validate(fcmTokenSchema), async (req, res, next) => {
     try {

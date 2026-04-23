@@ -1,0 +1,111 @@
+name: TMJConnect CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+  DATABASE_URL: postgresql://tmjconnect:test_password@localhost:5433/tmjconnect_test
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/shared
+      - name: Typecheck API
+        run: npx tsc --noEmit
+        working-directory: apps/api
+      - name: Typecheck Provider
+        run: npx tsc --noEmit
+        working-directory: apps/provider
+      - name: Typecheck Admin
+        run: npx tsc --noEmit
+        working-directory: apps/admin
+
+  test-api:
+    name: API Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tmjconnect_test
+          POSTGRES_USER: tmjconnect
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U tmjconnect"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      JWT_SECRET: test_jwt_secret_64chars_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      JWT_REFRESH_SECRET: test_refresh_secret_64chars_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      MFA_ENCRYPTION_KEY: test_mfa_key_64chars_cccccccccccccccccccccccccccccccccccccccc
+      ALLOWED_ORIGINS: http://localhost:3000
+      STORAGE_DRIVER: local
+      UPLOAD_DIR: /tmp/uploads
+      APP_URL: http://localhost:3000
+      API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/shared
+      - name: Run migrations
+        run: npx ts-node scripts/migrate.ts
+        working-directory: apps/api
+      - name: Run tests
+        run: npx jest --runInBand --ci --coverage
+        working-directory: apps/api
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: apps/api/coverage/
+
+  build-portals:
+    name: Build Web Portals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/shared
+      - name: Build Provider Portal
+        run: npx vite build
+        working-directory: apps/provider
+      - name: Build Admin Dashboard
+        run: npx vite build
+        working-directory: apps/admin
+
+  build-api-docker:
+    name: Build API Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, test-api]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -f apps/api/Dockerfile -t tmjconnect-api:${{ github.sha }} .
+      - name: Tag latest
+        run: docker tag tmjconnect-api:${{ github.sha }} tmjconnect-api:latest

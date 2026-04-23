@@ -62,7 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     const refreshToken = localStorage.getItem('refresh_token');
     if (refreshToken) {
-      api.post('/auth/logout', { refresh_token: refreshToken }).catch(() => {});
+      // API expects DELETE with refresh_token in the body (not POST).
+      api.delete('/auth/logout', { data: { refresh_token: refreshToken } }).catch(() => {});
     }
     localStorage.clear();
     setUser(null);

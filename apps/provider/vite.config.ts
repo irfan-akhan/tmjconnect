@@ -15,7 +15,12 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+      // VITE_PROXY_TARGET lets the container reach the API via the compose
+      // network (http://api:3000). Host dev keeps the localhost default.
+      '/api': {
+        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:3000',
+        changeOrigin: true,
+      },
     },
   },
   build: {

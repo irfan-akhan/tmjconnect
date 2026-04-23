@@ -1,13 +1,21 @@
+/**
+ * Clinical notes are PROVIDER-PRIVATE PHI. Routes must gate access with
+ * `authorize('provider')` — patients must never reach these queries. All
+ * ownership scoping uses scopeToUser with a provider role (which picks
+ * provider_id); if this file is ever reused for a patient-accessible path,
+ * replace scopeToUser with an explicit patient_id filter.
+ */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { clinicalNotes } from '../schema';
+import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
 
 export async function listNotesForPatient(
   db: DbClient,
   patientId: string,
-  providerId: string,
+  provider: ScopedUser,
   page: number,
   limit: number,
 ) {
@@ -15,13 +23,15 @@ export async function listNotesForPatient(
   return db
     .select()
     .from(clinicalNotes)
-    .where(and(eq(clinicalNotes.patient_id, patientId), eq(clinicalNotes.provider_id, providerId)))
+    .where(scopeToUser(eq(clinicalNotes.patient_id, patientId), clinicalNotes, provider))
     .orderBy(desc(clinicalNotes.created_at))
     .limit(limit)
     .offset(offset);
 }
 
 export async function countNotesForPatient(db: DbClient, patientId: string, providerId: string) {
+  // Kept as raw SQL for count aggregate. providerId is trusted (comes from req.user.id
+  // via a provider-gated route). If generalised, convert to Drizzle builder + scopeToUser.
   type Row = { total: string };
   const result = await db.execute<Row>(sql`
     SELECT COUNT(*)::text AS total FROM clinical_notes
@@ -39,11 +49,11 @@ export async function insertNote(
   return row;
 }
 
-export async function findNoteById(db: DbClient, id: string, providerId: string) {
+export async function findNoteById(db: DbClient, id: string, provider: ScopedUser) {
   const [row] = await db
     .select()
     .from(clinicalNotes)
-    .where(and(eq(clinicalNotes.id, id), eq(clinicalNotes.provider_id, providerId)))
+    .where(scopeToUser(eq(clinicalNotes.id, id), clinicalNotes, provider))
     .limit(1);
   return row ?? null;
 }
@@ -51,7 +61,7 @@ export async function findNoteById(db: DbClient, id: string, providerId: string)
 export async function updateNote(
   db: DbClient,
   id: string,
-  providerId: string,
+  provider: ScopedUser,
   fields: { body?: string; tags?: string[] },
 ) {
   const set: Record<string, unknown> = { updated_at: sql`NOW()` };
@@ -60,15 +70,15 @@ export async function updateNote(
   const [row] = await db
     .update(clinicalNotes)
     .set(set)
-    .where(and(eq(clinicalNotes.id, id), eq(clinicalNotes.provider_id, providerId)))
+    .where(scopeToUser(eq(clinicalNotes.id, id), clinicalNotes, provider))
     .returning();
   return row ?? null;
 }
 
-export async function deleteNote(db: DbClient, id: string, providerId: string) {
+export async function deleteNote(db: DbClient, id: string, provider: ScopedUser) {
   const result = await db
     .delete(clinicalNotes)
-    .where(and(eq(clinicalNotes.id, id), eq(clinicalNotes.provider_id, providerId)))
+    .where(scopeToUser(eq(clinicalNotes.id, id), clinicalNotes, provider))
     .returning({ id: clinicalNotes.id });
   return result.length > 0;
 }

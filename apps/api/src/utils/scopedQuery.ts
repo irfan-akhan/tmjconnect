@@ -1,4 +1,4 @@
-import { eq, and, type SQL } from 'drizzle-orm';
+import { eq, and, type SQL, type AnyColumn } from 'drizzle-orm';
 import type { TokenPayload } from '@tmjconnect/shared';
 import { sql } from 'drizzle-orm';
 
@@ -26,13 +26,13 @@ import { sql } from 'drizzle-orm';
 export function scopeToUser(
   baseCondition: SQL | undefined,
   table: {
-    patient_id?: SQL<unknown>;
-    user_id?: SQL<unknown>;
-    provider_id?: SQL<unknown>;
+    patient_id?: AnyColumn;
+    user_id?: AnyColumn;
+    provider_id?: AnyColumn;
   },
   user: Pick<TokenPayload, 'id' | 'role'>,
 ): SQL {
-  let ownerColumn: SQL<unknown> | undefined;
+  let ownerColumn: AnyColumn | undefined;
 
   if (user.role === 'patient') {
     ownerColumn = table.patient_id ?? table.user_id;
@@ -48,3 +48,9 @@ export function scopeToUser(
   const scopeFilter = eq(ownerColumn, user.id);
   return baseCondition ? and(baseCondition, scopeFilter)! : scopeFilter;
 }
+
+/**
+ * ScopedUser — The identity passed to scoped queries. Accepts anything with
+ * `id` and `role` (e.g. req.user from the auth middleware).
+ */
+export type ScopedUser = Pick<TokenPayload, 'id' | 'role'>;

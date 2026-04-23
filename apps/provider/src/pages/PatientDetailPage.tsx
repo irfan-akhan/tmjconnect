@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import {
   Activity,
   ArrowLeft,
+  BarChart3,
   Check,
   Dumbbell,
   FileText,
@@ -36,6 +37,7 @@ const SymptomsTab = lazy(() => import('@/features/patients/tabs/SymptomsTab'));
 const AssignmentsTab = lazy(() => import('@/features/patients/tabs/AssignmentsTab'));
 const ReportsTab = lazy(() => import('@/features/patients/tabs/ReportsTab'));
 const NotesTab = lazy(() => import('@/features/patients/tabs/NotesTab'));
+const InsightsTab = lazy(() => import('@/features/patients/tabs/InsightsTab'));
 
 function initials(first?: string, last?: string) {
   return `${first?.[0] ?? ''}${last?.[0] ?? ''}`.toUpperCase() || '—';
@@ -116,6 +118,10 @@ export function PatientDetailPage() {
             <FileText className="h-3.5 w-3.5 stroke-[1.5]" />
             Reports
           </TabsTrigger>
+          <TabsTrigger value="insights">
+            <BarChart3 className="h-3.5 w-3.5 stroke-[1.5]" />
+            Insights
+          </TabsTrigger>
           <TabsTrigger value="notes">
             <StickyNote className="h-3.5 w-3.5 stroke-[1.5]" />
             Notes
@@ -135,6 +141,11 @@ export function PatientDetailPage() {
         <TabsContent value="reports">
           <Suspense fallback={<SkeletonList />}>
             <ReportsTab patientId={patientId} />
+          </Suspense>
+        </TabsContent>
+        <TabsContent value="insights">
+          <Suspense fallback={<SkeletonList />}>
+            <InsightsTab patientId={patientId} />
           </Suspense>
         </TabsContent>
         <TabsContent value="notes">

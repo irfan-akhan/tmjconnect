@@ -1,45 +1,40 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { reportRequests } from '../schema';
+import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
 
 export async function listRequestsByProvider(
   db: DbClient,
-  providerId: string,
+  provider: ScopedUser,
   status?: 'pending' | 'fulfilled' | 'dismissed',
 ) {
-  if (status) {
-    return db
-      .select()
-      .from(reportRequests)
-      .where(and(eq(reportRequests.provider_id, providerId), eq(reportRequests.status, status)))
-      .orderBy(desc(reportRequests.created_at));
-  }
+  const baseCondition = status ? eq(reportRequests.status, status) : undefined;
   return db
     .select()
     .from(reportRequests)
-    .where(eq(reportRequests.provider_id, providerId))
+    .where(scopeToUser(baseCondition, reportRequests, provider))
     .orderBy(desc(reportRequests.created_at));
 }
 
 export async function listRequestsForPatientByProvider(
   db: DbClient,
   patientId: string,
-  providerId: string,
+  provider: ScopedUser,
 ) {
   return db
     .select()
     .from(reportRequests)
-    .where(and(eq(reportRequests.patient_id, patientId), eq(reportRequests.provider_id, providerId)))
+    .where(scopeToUser(eq(reportRequests.patient_id, patientId), reportRequests, provider))
     .orderBy(desc(reportRequests.created_at));
 }
 
-export async function listPendingRequestsForPatient(db: DbClient, patientId: string) {
+export async function listPendingRequestsForPatient(db: DbClient, patient: ScopedUser) {
   return db
     .select()
     .from(reportRequests)
-    .where(and(eq(reportRequests.patient_id, patientId), eq(reportRequests.status, 'pending')))
+    .where(scopeToUser(eq(reportRequests.status, 'pending'), reportRequests, patient))
     .orderBy(desc(reportRequests.created_at));
 }
 

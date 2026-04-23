@@ -2,6 +2,11 @@
 
 All notable changes to the TMJConnect API are documented here.
 
+## v1.2.0 — 2026-04-14
+
+### Changed — Signup now captures mobile number (breaking)
+- `POST /auth/patient/register` and `POST /auth/provider/register` now require a `phone` field in E.164 format (e.g. `+15551234567`). The value is persisted to `users.phone` (column already existed as nullable varchar(20); no migration needed). Required at signup so the account is immediately usable for SMS MFA without a later collection step. Existing accounts (pre-v1.2) keep `users.phone = NULL` and will be prompted to add one via a future profile-update flow.
+
 ## v1.1.0 — 2026-04-14
 
 Provider portal support: clinical notes, report requests, provider-authored reports, and avatar upload persistence.

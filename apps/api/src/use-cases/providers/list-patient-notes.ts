@@ -16,8 +16,9 @@ export async function execute(deps: Deps, input: ListPatientNotesInput) {
   const linked = await verifyProviderLink(deps.db, input.providerId, input.patientId);
   if (!linked) throw new AppError(403, 'FORBIDDEN', 'Patient is not linked to your account.');
 
+  const provider = { id: input.providerId, role: 'provider' as const };
   const [items, total] = await Promise.all([
-    listNotesForPatient(deps.db, input.patientId, input.providerId, input.page, input.limit),
+    listNotesForPatient(deps.db, input.patientId, provider, input.page, input.limit),
     countNotesForPatient(deps.db, input.patientId, input.providerId),
   ]);
   return {

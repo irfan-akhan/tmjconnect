@@ -9,16 +9,16 @@ export function exercisesRouter(container: Container) {
   const router = Router();
   router.use(authenticate, authorize('patient'));
 
-  router.get('/assignments', async (req, res, next) => {
+  router.get('/assignments', auditLog('patient_viewed_assignments', 'exercise_assignment'), async (req, res, next) => {
     try {
-      res.json({ data: await GetAssignments.execute(container, { patientId: req.user!.id }) });
+      res.json({ data: await GetAssignments.execute(container, { user: req.user! }) });
     } catch (err) { next(err); }
   });
 
   router.post('/assignments/:assignmentId/complete', auditLog('exercise_completed', 'exercise_assignment'), async (req, res, next) => {
     try {
       const { data, alreadyCompleted } = await CompleteAssignment.execute(container, {
-        patientId: req.user!.id,
+        user: req.user!,
         assignmentId: req.params.assignmentId,
       });
       res.status(alreadyCompleted ? 200 : 201).json({ data, alreadyCompleted });

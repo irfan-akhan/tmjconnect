@@ -29,6 +29,7 @@ const broadcastsLoader = () => import('./pages/BroadcastsPage');
 const systemMetricsLoader = () => import('./pages/SystemMetricsPage');
 const scheduledReportsLoader = () => import('./pages/ScheduledReportsPage');
 const featureFlagsLoader = () => import('./pages/FeatureFlagsPage');
+const analyticsLoader = () => import('./pages/AnalyticsPage');
 
 export const DashboardPage = lazy(dashboardLoader);
 export const UsersPage = lazy(usersLoader);
@@ -55,6 +56,7 @@ export const BroadcastsPage = lazy(broadcastsLoader);
 export const SystemMetricsPage = lazy(systemMetricsLoader);
 export const ScheduledReportsPage = lazy(scheduledReportsLoader);
 export const FeatureFlagsPage = lazy(featureFlagsLoader);
+export const AnalyticsPage = lazy(analyticsLoader);
 
 const prefetchMap: Record<string, () => Promise<unknown>> = {
   '/': dashboardLoader,
@@ -77,6 +79,7 @@ const prefetchMap: Record<string, () => Promise<unknown>> = {
   '/system': systemMetricsLoader,
   '/scheduled-reports': scheduledReportsLoader,
   '/feature-flags': featureFlagsLoader,
+  '/analytics': analyticsLoader,
 };
 
 export function prefetchRoute(path: string): void {

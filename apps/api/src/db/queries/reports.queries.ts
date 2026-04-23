@@ -1,10 +1,18 @@
 /**
  * reports.queries.ts — All database interactions for the reports module.
  * internal_notes is NEVER selected in patient-facing queries.
+ *
+ * Ownership: Drizzle-builder queries use scopeToUser for ownership filtering.
+ * Raw-SQL queries (listProviderReports, countProviderReports) hand-write the
+ * provider_id filter inline — equivalent protection, just can't share the
+ * helper. Queries that accept a reportId without an owner filter
+ * (getReportResponses*, markReport*, insertReportResponse) rely on the
+ * calling use-case to verify ownership first.
  */
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, sql, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { reports, reportResponses, idempotencyKeys } from '../schema';
+import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
 
@@ -122,7 +130,7 @@ export async function insertReportWithIdempotencyKey(
 
 // ─── Patient report queries ──────────────────────────────────────────────────────
 
-export async function getReportForPatient(db: DbClient, reportId: string, patientId: string) {
+export async function getReportForPatient(db: DbClient, reportId: string, patient: ScopedUser) {
   const [row] = await db
     .select({
       id: reports.id,
@@ -142,7 +150,7 @@ export async function getReportForPatient(db: DbClient, reportId: string, patien
       reviewed_at: reports.reviewed_at,
     })
     .from(reports)
-    .where(and(eq(reports.id, reportId), eq(reports.patient_id, patientId)))
+    .where(scopeToUser(eq(reports.id, reportId), reports, patient))
     .limit(1);
   return row ?? null;
 }
@@ -229,6 +237,84 @@ export async function listProviderReports(
   }));
 }
 
+// ─── Patient's own reports (list + count) ───────────────────────────────────────
+type PatientReportFilters = {
+  urgency?: 'routine' | 'concerning' | 'urgent';
+  from?: string;
+  to?: string;
+};
+
+type PatientInboxRow = {
+  id: string;
+  provider_id: string;
+  urgency: string;
+  status: string;
+  pain_level: string | null;
+  description_preview: string;
+  submitted_at: string;
+  provider_first_name: string;
+  provider_last_name: string;
+  response_count: string;
+};
+
+function buildPatientReportFilters(patientId: string, filters: PatientReportFilters) {
+  return sql`
+    r.patient_id = ${patientId}
+    ${filters.urgency ? sql`AND r.urgency = ${filters.urgency}` : sql``}
+    ${filters.from ? sql`AND r.submitted_at >= ${filters.from}::timestamptz` : sql``}
+    ${filters.to ? sql`AND r.submitted_at <= (${filters.to}::date + INTERVAL '1 day')` : sql``}
+  `;
+}
+
+export async function listMyReports(
+  db: DbClient,
+  patientId: string,
+  page: number,
+  limit: number,
+  filters: PatientReportFilters,
+) {
+  const offset = (page - 1) * limit;
+  const where = buildPatientReportFilters(patientId, filters);
+
+  const result = await db.execute<PatientInboxRow>(sql`
+    SELECT
+      r.id, r.provider_id, r.urgency, r.status,
+      r.pain_level::text AS pain_level,
+      LEFT(r.description, 200) AS description_preview,
+      r.submitted_at::text AS submitted_at,
+      p.first_name AS provider_first_name,
+      p.last_name AS provider_last_name,
+      (SELECT COUNT(*)::text FROM report_responses rr WHERE rr.report_id = r.id) AS response_count
+    FROM reports r
+    JOIN profiles p ON p.user_id = r.provider_id
+    WHERE ${where}
+    ORDER BY r.submitted_at DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `);
+
+  const rows: PatientInboxRow[] = Array.isArray(result) ? result : result.rows ?? [];
+  return rows.map((r) => ({
+    ...r,
+    pain_level: r.pain_level ? parseInt(r.pain_level, 10) : null,
+    response_count: parseInt(r.response_count, 10),
+  }));
+}
+
+export async function countMyReports(
+  db: DbClient,
+  patientId: string,
+  filters: PatientReportFilters,
+) {
+  type CountRow = { total: string };
+  const where = buildPatientReportFilters(patientId, filters);
+  const result = await db.execute<CountRow>(sql`
+    SELECT COUNT(*)::text AS total FROM reports r WHERE ${where}
+  `);
+  const rows: CountRow[] = Array.isArray(result) ? result : result.rows ?? [];
+  return parseInt(rows[0]?.total ?? '0', 10);
+}
+
 export async function countProviderReports(
   db: DbClient,
   providerId: string,
@@ -243,11 +329,11 @@ export async function countProviderReports(
   return parseInt(rows[0]?.total ?? '0', 10);
 }
 
-export async function getReportForProvider(db: DbClient, reportId: string, providerId: string) {
+export async function getReportForProvider(db: DbClient, reportId: string, provider: ScopedUser) {
   const [row] = await db
     .select()
     .from(reports)
-    .where(and(eq(reports.id, reportId), eq(reports.provider_id, providerId)))
+    .where(scopeToUser(eq(reports.id, reportId), reports, provider))
     .limit(1);
   return row ?? null;
 }
@@ -265,7 +351,7 @@ export async function markReportViewed(db: DbClient, reportId: string) {
   await db
     .update(reports)
     .set({ status: 'viewed', viewed_at: sql`NOW()` })
-    .where(and(eq(reports.id, reportId), eq(reports.status, 'submitted')));
+    .where(sql`${reports.id} = ${reportId} AND ${reports.status} = 'submitted'`);
 }
 
 export async function markReportReviewed(db: DbClient, reportId: string) {
@@ -302,11 +388,11 @@ export async function insertReportResponse(
   });
 }
 
-export async function toggleReportFlag(db: DbClient, reportId: string, providerId: string) {
+export async function toggleReportFlag(db: DbClient, reportId: string, provider: ScopedUser) {
   const [row] = await db
     .update(reports)
     .set({ flagged: sql`NOT flagged` })
-    .where(and(eq(reports.id, reportId), eq(reports.provider_id, providerId)))
+    .where(scopeToUser(eq(reports.id, reportId), reports, provider))
     .returning({ id: reports.id, flagged: reports.flagged });
   return row ?? null;
 }

@@ -30,6 +30,15 @@ export const reportInboxQuerySchema = z.object({
   urgency: z.enum(['routine', 'concerning', 'urgent']).optional(),
 });
 
+// ─── Patient's own reports query ───────────────────────────────────────────────────
+export const patientReportsListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  urgency: z.enum(['routine', 'concerning', 'urgent']).optional(),
+  from: z.string().date().optional(),
+  to: z.string().date().optional(),
+});
+
 // ─── Clinical notes (provider-only; about a patient, never patient-visible) ────────
 export const createClinicalNoteSchema = z.object({
   body: freeText(1, 10000),

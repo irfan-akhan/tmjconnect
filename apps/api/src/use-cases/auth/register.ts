@@ -12,8 +12,9 @@ export type RegisterInput = {
   password: string;
   first_name: string;
   last_name: string;
+  phone: string;
+  date_of_birth?: string;
   timezone?: string;
-  // Provider-only fields:
   license_number?: string;
   license_type?: string;
   specialty?: string;
@@ -43,6 +44,8 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
     email_verify_expires,
     first_name: input.first_name,
     last_name: input.last_name,
+    phone: input.phone,
+    date_of_birth: input.date_of_birth,
     timezone: input.timezone ?? 'America/Chicago',
     license_number: input.license_number,
     license_type: input.license_type,

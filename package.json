@@ -12,10 +12,15 @@
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:admin": "npm run dev --workspace=apps/admin",
     "dev:provider": "npm run dev --workspace=apps/provider",
+    "dev:provider-v2": "npm run dev --workspace=apps/provider-v2",
+    "dev:mobile": "npm run dev --workspace=apps/mobile",
     "lint": "npm run lint --workspaces --if-present"
   },
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
+  },
+  "dependencies": {
+    "react-native-qrcode-svg": "^6.3.21"
   }
 }

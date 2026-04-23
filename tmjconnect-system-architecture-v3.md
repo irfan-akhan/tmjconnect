@@ -2336,6 +2336,87 @@ Based on second external architecture review. 2 bugs fixed, 10 fixes applied, 4 
 | **Provider exercise text fields documented as plain text** | Nit #1 | `description` and `instructions` are deliberately plain text for MVP. Sanitisation still runs (single code path). Rich text is post-MVP. (Section 6.4) |
 | **`sessions` vs `refresh_tokens` rationale documented** | Nit #2 | Different purposes: sessions = UI display + timeout. Refresh tokens = rotation + reuse detection. Merging would conflate logic. (Section 6.2) |
 
+### Changes introduced in v3.6 — Code reality addendum (2026-04-15)
+
+This section documents material additions and deviations that exist in the codebase but were not in the original v3.0–v3.5 document. Prior sections are retained verbatim — read this section alongside them for the current ground truth. When the two conflict, **the code is the source of truth** until a formal revision catches up; use this table to navigate.
+
+#### Architectural additions (code exceeds spec)
+
+| Addition | Where it lives | Why it was added |
+|---|---|---|
+| **Use-case layer** (`apps/api/src/use-cases/<module>/*.ts`) | One execute-style function per operation, sitting between `routes/` and `db/queries/` | Separates HTTP concerns (request parsing, status codes) from business logic. Route files are now thin — they parse input, call the use-case, serialise output. Makes use-cases trivially unit-testable without spinning up Express. Spec §5.2's "routes call queries directly" pattern is preserved for trivial paths but no longer the norm. |
+| **Notification outbox pattern** (`src/services/notify.ts` + `notification_outbox` table + `src/jobs/outboxJob.ts`) | Every channel dispatch (email/SMS/push) writes an outbox row inside the same transaction as the triggering action. A background job drains pending rows with exponential backoff and a DLQ for exhausted retries. | Spec §9.1 requires notifications to survive process crashes between "write the row" and "send the email." The outbox pattern makes dispatch durable — a crash leaves the row pending, the job picks it up on next tick. SKIP LOCKED allows parallel workers safely. |
+| **Job runs health tracking** (`job_runs` table, `src/jobs/index.ts`) | Every cron tick inserts/updates a row with run status, duration, error message. Admin dashboard exposes it. | Spec §12 mentions `pg_advisory_lock` but not observability. Without this, a silently-failing job (e.g. `cleanupJob` aborting due to the >50-account safeguard) was undetectable. Now every job has a visible heartbeat. |
+| **Admin portal features: broadcasts, scheduled reports, feature flags, audit exports** (migration 0006) | Beyond the §13 user-management scope. | Pilot operations need broadcast-to-all-patients messaging, admin-scheduled report reminders, and runtime feature toggles without redeploy. |
+| **Provider-authored reports + report requests + clinical notes** (migration 0007, §6.5 additions) | Three new concepts in `reports.ts`, `clinical-notes.queries.ts`, `report-requests.queries.ts`. | Spec §6.5 has patient-authored reports only. v1.1 adds: (a) **provider on-behalf-of reports** (`reports.authored_by_role='provider'`); (b) **report requests** (`report_requests` table — provider nudges patient to file); (c) **clinical notes** (`clinical_notes` — provider-private PHI never visible to patient). All three are documented in `docs/API_CHANGELOG.md` v1.1.0. |
+| **Patient data export** (`GET /patients/me/export`) | HIPAA right-of-access endpoint. Synchronous JSON archive at pilot scale. | Not in spec §8; HIPAA right-of-access is required regardless. Rate-limited via a dedicated `rl_data_export` store (5/hour/IP). Excludes `clinical_notes` and `report_responses.internal_notes` (provider-private). |
+| **Mobile phone required at signup** (v1.2.0) | `registerPatientSchema` and `registerProviderSchema` now require `phone` in E.164 format. Persisted to `users.phone` (column already existed as nullable). | Spec §6.2 had phone as optional. Making it required at signup removes a two-step flow for SMS MFA enablement and reminders. Existing accounts pre-v1.2 keep `phone = NULL` and will need a profile-update flow to backfill (not yet built). |
+| **Split register endpoints** | `POST /auth/patient/register` and `POST /auth/provider/register` (separate routes) | Spec §8.1 listed a single `/auth/register` with a role discriminator. The split gives each role its own Zod schema (`registerPatientSchema` / `registerProviderSchema`) and own audit action, removing discriminated-union complexity. |
+| **Separate `/auth/admin/login`** | Dedicated admin login path. | Spec §7.4 was role-agnostic; admins now use a distinct endpoint so the admin portal never cross-calls patient/provider auth routes. |
+
+#### Infrastructure additions
+
+| Addition | Where | Notes |
+|---|---|---|
+| **Docker dev stack with HMR** | `docker/docker-compose.dev.yml` + `Dockerfile.dev` | Full dev environment in containers: postgres + postgres_test + api (ts-node-dev) + provider (Vite) + admin (Vite) + migrate init. Bind-mounted source, polling file watchers, named-volume `node_modules` per service. See `docs/DEV_STACK.md`. |
+| **Admin Dockerfile + compose service** | `apps/admin/Dockerfile`, admin-frontend service in prod compose | Mirrors provider's multi-stage build pattern. nginx mounts the built dist via named volume. |
+| **Migrate init service** | One-shot container gates API startup via `depends_on: service_completed_successfully` | Prod deploys always apply pending migrations before the API accepts traffic. |
+| **Bundled migrate script in prod image** | `ts-node` moved to dependencies; `scripts/` + `drizzle/` copied into the production image | `docker compose run migrate` works without a separate toolchain. |
+| **`.dockerignore` + `.env.example` hardened** | Root `.dockerignore`, `docker/.env.example` documents every required var | Prevents host `node_modules`, tests, docs, and secrets from leaking into image layers. |
+| **SPA build-arg `VITE_API_BASE_URL`** | Provider + admin Dockerfiles | Same image can target dev/staging/prod by rebuilding with a different arg. |
+
+#### Compliance upgrades (code now matches or exceeds spec)
+
+| Item | Status |
+|---|---|
+| **`scopeToUser()` wired into PHI queries** (spec §3.9 requirement) | ✅ Now enforced in 30 callsites across 7 query files (symptoms, notifications, exercises, reminders, clinical-notes, report-requests, reports). Queries signature now takes `user: ScopedUser` instead of `userId: string`. Spec §3.9's "every PHI query must use scopeToUser" rule is now true in code. Tested via `queries.test.ts` and `security.test.ts` cross-tenant isolation suites. |
+| **React StrictMode trap on auth refresh** | ✅ Provider portal `AuthProvider` now guards the silent-refresh `useEffect` with a ref to prevent StrictMode's double-invoke from burning the refresh-token family. See `memory/feedback_verify_against_real_api.md`. |
+
+#### Substitutions vs spec (functionally equivalent)
+
+| Spec called for | Code uses | Why |
+|---|---|---|
+| `@express-rate-limit/pg` rate-limiter store (§2) | `rate-limiter-flexible` with PostgreSQL store | Same net guarantee (rate-limit counters persist across deploys). Different API shape, same correctness properties. No changelog entry was made at the time of substitution; tracked here. |
+| Single `/auth/register` endpoint (§8.1) | `/auth/patient/register` + `/auth/provider/register` | See "split register endpoints" above. |
+
+#### Scope changes from the original MVP plan
+
+| Spec item | Status | Notes |
+|---|---|---|
+| **`apps/mobile/` — Expo patient app** (§5.1, §7.6, Sprint 2) | ⏳ **Not yet started** | The 3-app product is currently a 2-app product (provider portal + admin portal). Patient mobile app is the next big rock. |
+| **`apps/landing/` — marketing landing page** (§5.1) | ⏳ **Not yet started** | Low priority vs patient mobile app. |
+| **`packages/ui/` — shared React components** (§5.1) | ❌ **Dropped** | Provider uses shadcn/ui + Radix; admin uses antd. Two distinct design systems — shared component library adds no value at a 2-app repo size. Revisit if a third React app lands. |
+| **`apps/portal/` naming** (§5.1) | Renamed to `apps/provider/` in code | Cosmetic drift; no functional change. |
+
+#### Known gaps vs spec (work to do)
+
+| Item | Status | Where it's tracked |
+|---|---|---|
+| **GitHub Actions CI (test → build → push → deploy)** (§16.1, Sprint 6 #7) | ❌ Missing | No `.github/workflows/` directory. Every deploy is manual. |
+| **Sentry `beforeSend` PII scrubbing** (§14.8, §22 action #9) | ⚠️ `config/sentry.ts` exists; scrub hook not yet audited against the §14.7 PHI classification table | Pending verification + patch. |
+| **GPG-encrypted `pg_dump` backups** (§14.1, §22 action #17) | ❌ Missing | No backup script; `BACKUP_PASSPHRASE` env var defined but unused. |
+| **Pre-deploy schema snapshots** (`drizzle/snapshots/`) (§6.1.2) | ❌ Missing | Fix-forward rollback strategy stated, but the snapshot captures don't exist. |
+| **Monthly backup restore drill** (§17 NFR, §21 testing checklist) | ❌ Missing | No drill has been executed; no procedure is documented in `docs/RUNBOOK.md`. |
+| **k6 load test** (`tests/load/`) (Sprint 6 #10) | ❌ Missing | No script exists. |
+| **LUKS full-disk encryption on VPS** (§22 action #15) | ❌ Unknown — infra, not code | Must be set at VPS provisioning time. |
+| **BAAs with Resend / Twilio / Sentry** (§22 actions #7, #8, #9) | ❌ External — not verifiable from code | |
+| **Incident response procedure in runbook** (§22 action #16, §14.8) | ⚠️ `docs/RUNBOOK.md` exists; §14.8 procedure not confirmed as covered | Audit needed. |
+
+#### Documentation additions since v3.5
+
+| Doc | Purpose |
+|---|---|
+| `docs/API_CHANGELOG.md` | Per-release endpoint + schema changes. Currently tracks v1.1.0 (provider portal features) and v1.2.0 (phone required at signup). |
+| `docs/openapi.yaml` + Swagger UI at `/docs` | OpenAPI 3.1 spec served by the API in dev. Spec §20 Sprint 6 #9 anticipated this; it now exists. |
+| `docs/DEV_STACK.md` | First-time + daily-use guide for the Docker dev stack. |
+| `docs/DEPLOYMENT.md` | Pilot + prod deployment guide with architecture diagram and runbooks. |
+| `docs/RUNBOOK.md` | Operational procedures (needs §14.8 incident-response cross-check per gap table above). |
+| `docs/SETUP_CHECKLIST.md` | Pre-go-live checklist. |
+
+---
+
+*v3.6 addendum prepared 2026-04-15. Reflects the state of the codebase as of this date. Subsequent changes should append similar sections rather than mutate prior v3.0–v3.5 content.*
+
 ---
 
 *Prepared by AQION TECH | Confidential | April 2026*

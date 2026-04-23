@@ -13,6 +13,7 @@ export interface EmailService {
   sendReportReviewed(to: string, patientName: string): Promise<void>;
   sendWeeklyDigest(to: string, patientName: string, stats: WeeklyDigestStats): Promise<void>;
   sendEmailInvite(to: string, providerName: string, code: string): Promise<void>;
+  sendEmailChangeCode(to: string, code: string): Promise<void>;
 }
 
 export interface WeeklyDigestStats {
@@ -101,6 +102,18 @@ function templates(appUrl: string) {
           ${code}
         </div>
         <p style="color:#888;font-size:13px;">This code expires in 24 hours. If you did not create a TMJConnect account, you can safely ignore this email.</p>
+      `),
+    }),
+
+    emailChangeCode: (code: string) => ({
+      subject: 'Confirm your new TMJConnect email',
+      html: baseTemplate(`
+        <h2 style="color:${BRAND_NAVY};">Confirm your new email</h2>
+        <p>Enter this 6-digit code in TMJConnect to finish switching your sign-in email to this address:</p>
+        <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:${BRAND_NAVY};text-align:center;padding:16px;background:#f5f5f5;border-radius:4px;margin:16px 0;">
+          ${code}
+        </div>
+        <p style="color:#888;font-size:13px;">This code expires in 1 hour. If you didn't request an email change, you can safely ignore this — your current email stays active.</p>
       `),
     }),
 
@@ -337,6 +350,10 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
     },
     async sendEmailInvite(to, providerName, code) {
       const { subject, html } = tmpl.emailInvite(providerName, code);
+      await send(to, subject, html);
+    },
+    async sendEmailChangeCode(to, code) {
+      const { subject, html } = tmpl.emailChangeCode(code);
       await send(to, subject, html);
     },
   };

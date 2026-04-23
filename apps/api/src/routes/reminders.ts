@@ -13,27 +13,27 @@ export function remindersRouter(container: Container) {
   const router = Router();
   router.use(authenticate);
 
-  router.get('/', async (req, res, next) => {
+  router.get('/', auditLog('reminders_viewed', 'reminder'), async (req, res, next) => {
     try {
-      res.json({ data: await List.execute(container, { userId: req.user!.id }) });
+      res.json({ data: await List.execute(container, { user: req.user! }) });
     } catch (err) { next(err); }
   });
 
   router.post('/', validate(createReminderSchema), auditLog('reminder_created', 'reminder'), async (req, res, next) => {
     try {
-      res.status(201).json({ data: await Create.execute(container, { userId: req.user!.id, ...req.body }) });
+      res.status(201).json({ data: await Create.execute(container, { user: req.user!, ...req.body }) });
     } catch (err) { next(err); }
   });
 
   router.patch('/:id', validate(updateReminderSchema), auditLog('reminder_updated', 'reminder'), async (req, res, next) => {
     try {
-      res.json({ data: await Update.execute(container, { userId: req.user!.id, id: req.params.id, ...req.body }) });
+      res.json({ data: await Update.execute(container, { user: req.user!, id: req.params.id, ...req.body }) });
     } catch (err) { next(err); }
   });
 
   router.delete('/:id', auditLog('reminder_deleted', 'reminder'), async (req, res, next) => {
     try {
-      await Delete.execute(container, { userId: req.user!.id, id: req.params.id });
+      await Delete.execute(container, { user: req.user!, id: req.params.id });
       res.status(204).send();
     } catch (err) { next(err); }
   });

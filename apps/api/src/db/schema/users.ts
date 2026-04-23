@@ -25,6 +25,12 @@ export const users = pgTable('users', {
   // 6-digit verification code. Encrypted at rest with AES-256-GCM using MFA_ENCRYPTION_KEY.
   email_verify_code: text('email_verify_code'),
   email_verify_expires: timestamp('email_verify_expires', { withTimezone: true }),
+  // Pending email change flow — populated by /auth/change-email/request,
+  // cleared on /auth/change-email/verify success. Uses the same encryption
+  // scheme as email_verify_code for the stored code.
+  pending_email: varchar('pending_email', { length: 255 }),
+  pending_email_code: text('pending_email_code'),
+  pending_email_expires: timestamp('pending_email_expires', { withTimezone: true }),
   // TOTP secret encrypted at rest with AES-256-GCM using MFA_ENCRYPTION_KEY.
   mfa_secret: text('mfa_secret'),
   mfa_enabled: boolean('mfa_enabled').notNull().default(false),

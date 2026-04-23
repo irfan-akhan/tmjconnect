@@ -9,3 +9,5 @@ export * from './exercises';
 export * from './clinical';
 export * from './notifications';
 export * from './system';
+export * from './tracking';
+export * from './intake';

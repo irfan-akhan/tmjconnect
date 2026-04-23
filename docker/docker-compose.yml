@@ -1,9 +1,14 @@
-version: '3.9'
-
-# TMJConnect Pilot — Production-like stack: api + postgres + nginx
+# TMJConnect — Production stack.
+#
 # Usage:
-#   docker compose --env-file .env up -d
-#   docker compose logs -f api
+#   cp docker/.env.example docker/.env        # then fill in secrets
+#   docker compose -f docker/docker-compose.yml --env-file docker/.env up -d
+#   docker compose -f docker/docker-compose.yml logs -f api
+#
+# Dev stack is a separate file: docker/docker-compose.dev.yml
+# (run it with `-f docker/docker-compose.dev.yml`). They do not share services;
+# keeping them separate avoids the override-file gotcha where dev settings
+# leak into production.
 
 services:
 
@@ -19,8 +24,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - internal
-    # Do not expose port to host in production. API connects via internal network.
-    # For local dev access: use docker-compose.dev.yml which exposes 5432.
+    # No host port exposure — API connects via internal network only.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tmjconnect"]
       interval: 10s
@@ -32,16 +36,43 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ─── TMJConnect API ─────────────────────────────────────────────────────────────
-  api:
-    image: ghcr.io/your-org/tmjconnect-api:latest
+  # ─── Migrate (one-shot init) ───────────────────────────────────────────────────
+  # Runs pending SQL migrations, then exits. The `api` service waits on this
+  # to complete successfully before starting — guarantees the schema is up to
+  # date before the app accepts traffic.
+  migrate:
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
+      target: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tmjconnect:${POSTGRES_PASSWORD}@postgres:5432/tmjconnect?sslmode=disable
+    working_dir: /app/apps/api
+    command: ["npx", "ts-node", "scripts/migrate.ts"]
+    networks:
+      - internal
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─── TMJConnect API ─────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: production
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -50,18 +81,18 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      RESEND_API_KEY: ${RESEND_API_KEY}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
-      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
-      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
-      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
       STORAGE_DRIVER: local
       UPLOAD_DIR: /data/uploads
       APP_URL: ${APP_URL}
       API_URL: ${API_URL}
-      SENTRY_DSN: ${SENTRY_DSN}
+      SENTRY_DSN: ${SENTRY_DSN:-}
       LOG_LEVEL: info
     volumes:
       - uploads_data:/data/uploads
@@ -81,14 +112,17 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ─── Provider portal (SPA build) ────────────────────────────────────────────
-  # This container builds the provider frontend and exposes its /dist as a
-  # named volume that nginx mounts read-only. It does not serve traffic itself.
+  # ─── Provider portal (SPA build carrier) ────────────────────────────────────
+  # Builds the provider frontend, copies its dist into a named volume so nginx
+  # can serve it. Not a long-running service — it sleeps after the copy
+  # because compose requires services to stay alive.
   provider-frontend:
-    image: ghcr.io/your-org/tmjconnect-provider:latest
     build:
       context: ..
       dockerfile: apps/provider/Dockerfile
+      target: production
+      args:
+        VITE_API_BASE_URL: ${PROVIDER_API_BASE_URL:-/api/v1}
     command: ["sh", "-c", "cp -r /usr/share/nginx/html/. /export/ && tail -f /dev/null"]
     volumes:
       - provider_dist:/export
@@ -100,21 +134,18 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ─── Nginx (reverse proxy + SSL + static files) ─────────────────────────────────
-  nginx:
-    image: nginx:1.25-alpine
-    restart: unless-stopped
-    depends_on:
-      - api
-      - provider-frontend
-    ports:
-      - "80:80"
-      - "443:443"
+  # ─── Admin portal (SPA build carrier) ───────────────────────────────────────
+  # Same pattern as provider-frontend.
+  admin-frontend:
+    build:
+      context: ..
+      dockerfile: apps/admin/Dockerfile
+      target: production
+      args:
+        VITE_API_BASE_URL: ${ADMIN_API_BASE_URL:-/api/v1}
+    command: ["sh", "-c", "cp -r /usr/share/nginx/html/. /export/ && tail -f /dev/null"]
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - uploads_data:/data/uploads:ro
-      - certbot_certs:/etc/letsencrypt:ro
-      - provider_dist:/usr/share/nginx/html/provider:ro
+      - admin_dist:/export
     networks:
       - internal
     logging:
@@ -123,28 +154,53 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ─── Certbot (Let's Encrypt SSL certificate management) ─────────────────────────
+  # ─── Nginx (reverse proxy + TLS + static files) ─────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      provider-frontend:
+        condition: service_started
+      admin-frontend:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - uploads_data:/data/uploads:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+      - provider_dist:/usr/share/nginx/html/provider:ro
+      - admin_dist:/usr/share/nginx/html/admin:ro
+    networks:
+      - internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ─── Certbot (Let's Encrypt SSL certificate management) ─────────────────────
   certbot:
     image: certbot/certbot:latest
     volumes:
       - certbot_certs:/etc/letsencrypt
       - certbot_www:/var/www/certbot
-    # Run manually to obtain/renew certs:
+    # Run manually to obtain certs the first time:
     #   docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d api.tmjconnect.com
     # Then reload nginx: docker compose exec nginx nginx -s reload
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
 volumes:
   postgres_data:
-    driver: local
   uploads_data:
-    driver: local
   certbot_certs:
-    driver: local
   certbot_www:
-    driver: local
   provider_dist:
-    driver: local
+  admin_dist:
 
 networks:
   internal:

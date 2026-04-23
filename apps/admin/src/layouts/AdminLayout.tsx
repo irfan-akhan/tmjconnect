@@ -31,6 +31,7 @@ import {
   DatabaseOutlined,
   ScheduleOutlined,
   FlagOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useThemeMode } from '../context/ThemeContext';
@@ -52,7 +53,10 @@ const { Header, Sider, Content } = Layout;
 const navGroups: { label: string; items: { key: string; icon: ReactNode; label: string }[] }[] = [
   {
     label: 'Overview',
-    items: [{ key: '/', icon: <DashboardOutlined />, label: 'Dashboard' }],
+    items: [
+      { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
+      { key: '/analytics', icon: <LineChartOutlined />, label: 'Analytics' },
+    ],
   },
   {
     label: 'Management',

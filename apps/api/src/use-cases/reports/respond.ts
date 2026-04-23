@@ -14,7 +14,8 @@ export type RespondInput = {
 export async function execute(deps: Deps, input: RespondInput) {
   const { db, notify, logger } = deps;
 
-  const report = await getReportForProvider(db, input.reportId, input.providerId);
+  const provider = { id: input.providerId, role: 'provider' as const };
+  const report = await getReportForProvider(db, input.reportId, provider);
   if (!report) throw new AppError(404, 'NOT_FOUND', 'Report not found.');
 
   const response = await insertReportResponse(

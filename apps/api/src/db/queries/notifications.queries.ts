@@ -4,6 +4,7 @@
 import { eq, and, lt, lte, isNull, desc, sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { notifications, notificationOutbox } from '../schema';
+import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
 
@@ -110,46 +111,43 @@ export async function countOutboxDLQ(db: DbClient): Promise<number> {
 
 export async function listNotifications(
   db: DbClient,
-  userId: string,
+  user: ScopedUser,
   cursor: Date | null,
   limit: number,
 ) {
+  const baseCondition = cursor ? lt(notifications.created_at, cursor) : undefined;
   return db
     .select()
     .from(notifications)
-    .where(
-      cursor
-        ? and(eq(notifications.user_id, userId), lt(notifications.created_at, cursor))
-        : eq(notifications.user_id, userId),
-    )
+    .where(scopeToUser(baseCondition, notifications, user))
     .orderBy(desc(notifications.created_at))
     .limit(limit + 1); // extra row for hasMore detection
 }
 
-export async function countUnread(db: DbClient, userId: string): Promise<number> {
+export async function countUnread(db: DbClient, user: ScopedUser): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(notifications)
-    .where(and(eq(notifications.user_id, userId), eq(notifications.read, false)));
+    .where(scopeToUser(eq(notifications.read, false), notifications, user));
   return row?.count ?? 0;
 }
 
-export async function markAllNotificationsRead(db: DbClient, userId: string) {
+export async function markAllNotificationsRead(db: DbClient, user: ScopedUser) {
   await db
     .update(notifications)
     .set({ read: true, read_at: sql`NOW()` })
-    .where(and(eq(notifications.user_id, userId), eq(notifications.read, false)));
+    .where(scopeToUser(eq(notifications.read, false), notifications, user));
 }
 
 export async function markNotificationRead(
   db: DbClient,
   notifId: string,
-  userId: string,
+  user: ScopedUser,
 ) {
   const [row] = await db
     .update(notifications)
     .set({ read: true, read_at: sql`NOW()` })
-    .where(and(eq(notifications.id, notifId), eq(notifications.user_id, userId)))
+    .where(scopeToUser(eq(notifications.id, notifId), notifications, user))
     .returning();
   return row ?? null;
 }

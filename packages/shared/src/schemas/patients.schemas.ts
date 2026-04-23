@@ -10,6 +10,7 @@ export const updatePatientProfileSchema = z.object({
   city: z.string().max(100).optional().nullable(),
   state: z.string().max(50).optional().nullable(),
   timezone: z.string().max(50).optional(),
+  avatar_url: z.string().url().max(500).optional().nullable(),
 });
 
 // ─── Symptom Log ─────────────────────────────────────────────────────────────────

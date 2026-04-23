@@ -67,38 +67,34 @@ Do NOT use `npm run db:push` in production — it diffs schema against the live 
 
 ### 2.1 Automated daily backup (pilot VPS)
 
-A cron job on the VPS host runs nightly at **02:00 UTC**:
+The canonical backup script lives at [scripts/backup.sh](../scripts/backup.sh) in the repo — copy it to the VPS rather than pasting from this document. A cron job on the VPS host runs it nightly at **02:00 UTC**.
 
-```bash
-#!/bin/bash
-# /opt/tmjconnect/backup.sh — run via cron: 0 2 * * * /opt/tmjconnect/backup.sh
-set -euo pipefail
-
-BACKUP_DIR="/opt/tmjconnect/backups"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-DUMP_FILE="${BACKUP_DIR}/tmjconnect_${TIMESTAMP}.sql.gz.gpg"
-RETENTION_DAYS=30
-
-mkdir -p "${BACKUP_DIR}"
-
-# Dump, compress, and encrypt in a single pipeline — plaintext never touches disk.
-docker exec tmjconnect-postgres pg_dump -U tmjconnect_api tmjconnect \
-  | gzip \
-  | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file /opt/tmjconnect/.backup_passphrase \
-  > "${DUMP_FILE}"
-
-chmod 600 "${DUMP_FILE}"
-
-# Prune backups older than retention window.
-find "${BACKUP_DIR}" -name "tmjconnect_*.sql.gz.gpg" -mtime +${RETENTION_DAYS} -delete
-
-echo "[$(date -Iseconds)] Backup completed: ${DUMP_FILE}"
-```
+**What the script does:**
+- Single pipeline `pg_dump | gzip | gpg --symmetric --cipher-algo AES256` — plaintext PHI never touches disk
+- Writes `tmjconnect_YYYYMMDD_HHMMSS.sql.gz.gpg` with `chmod 600`
+- Sanity-checks file size (< 1 KB = treat as failure and delete)
+- Prunes backups older than 30 days
+- Exits non-zero on any pipeline failure (`set -euo pipefail`)
 
 **Setup steps:**
-1. Create `/opt/tmjconnect/.backup_passphrase` with a strong random passphrase. `chmod 600`. This passphrase must NOT be the same as `BACKUP_PASSPHRASE` in the API `.env` — it is host-level only.
-2. Add the cron entry: `crontab -e` → `0 2 * * * /opt/tmjconnect/backup.sh >> /var/log/tmjconnect-backup.log 2>&1`
-3. Verify first run: `bash /opt/tmjconnect/backup.sh && ls -lh /opt/tmjconnect/backups/`
+1. Copy the script to the VPS:
+   ```bash
+   scp scripts/backup.sh user@vps:/opt/tmjconnect/backup.sh
+   ssh user@vps
+   chmod +x /opt/tmjconnect/backup.sh
+   ```
+2. Create the passphrase file. This passphrase must NOT be the same as `BACKUP_PASSPHRASE` in the API `.env` — it is host-level only. **Store a copy in your password manager — restore is impossible without it.**
+   ```bash
+   openssl rand -base64 48 > /opt/tmjconnect/.backup_passphrase
+   chmod 600 /opt/tmjconnect/.backup_passphrase
+   ```
+3. Add the cron entry: `crontab -e` → `0 2 * * * /opt/tmjconnect/backup.sh >> /var/log/tmjconnect-backup.log 2>&1`
+4. Verify first run: `bash /opt/tmjconnect/backup.sh && ls -lh /opt/tmjconnect/backups/`
+
+**Configurable env vars** (all optional — defaults match the standard pilot layout):
+`BACKUP_DIR`, `PASSPHRASE_FILE`, `CONTAINER`, `DB_USER`, `DB_NAME`, `RETENTION_DAYS`.
+
+> **Off-VPS replication (follow-up):** The 30-day local retention does not survive VPS loss. Before go-live, sync `/opt/tmjconnect/backups/` to a second host or encrypted object store (S3 with SSE-KMS). Cheapest pilot option: `rclone sync` to Backblaze B2 on the same cron.
 
 ### 2.2 Restore procedure
 
@@ -123,11 +119,23 @@ docker exec tmjconnect-postgres psql -U postgres -c "DROP DATABASE tmjconnect_re
 
 ### 2.3 Restore drills
 
-Run **monthly**. Record results here:
+Run **on the first Monday of every month.** The drill is automated — [scripts/restore-drill.sh](../scripts/restore-drill.sh) restores the most recent backup into a throwaway database (`tmjconnect_drill`), compares row counts for critical PHI tables against the live DB, then drops the drill DB.
+
+**Run it:**
+```bash
+ssh user@vps
+/opt/tmjconnect/restore-drill.sh
+```
+
+The script's last line prints a copy-paste row for the log table below. Exit codes: `0` pass, `2` restore failed, `3` row-count mismatch exceeds the 100-row tolerance (configurable via `TOLERANCE` env var — raise it as write volume grows).
+
+**Drill log:**
 
 | Date | Backup file | Row count match? | Duration | Operator |
 |------|-------------|------------------|----------|----------|
 | _TBD_ | | | | |
+
+> **Escalation:** A failed drill is a P1 incident (§3.1) — backups you can't restore are not backups. Investigate within 4 hours.
 
 ### 2.4 Production (AWS RDS)
 

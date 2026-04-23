@@ -10,6 +10,7 @@ export * from './schemas/reports.schemas';
 export * from './schemas/linking.schemas';
 export * from './schemas/notifications.schemas';
 export * from './schemas/admin.schemas';
+export * from './schemas/tracking.schemas';
 
 // ─── Types ────────────────────────────────────────────────────────────────────────
 export * from './types';

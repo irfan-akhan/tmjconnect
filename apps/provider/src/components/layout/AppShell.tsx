@@ -6,6 +6,9 @@ import {
   Dumbbell,
   Inbox,
   Link2,
+  BarChart3,
+  ClipboardList,
+  HelpCircle,
   Settings,
   Moon,
   Sun,
@@ -18,6 +21,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import { useUnreadReportsCount } from '@/features/dashboard/queries';
 import { useProfile } from '@/features/settings/queries';
 import { CommandPalette, useCommandPaletteHotkeys } from '@/components/CommandPalette';
+import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
 
 const nav = [
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard, kbd: '01' },
@@ -25,7 +29,10 @@ const nav = [
   { to: '/exercises', label: 'Exercises', icon: Dumbbell, kbd: '03' },
   { to: '/reports', label: 'Reports', icon: Inbox, kbd: '04' },
   { to: '/linking', label: 'Linking', icon: Link2, kbd: '05' },
-  { to: '/settings', label: 'Settings', icon: Settings, kbd: '06' },
+  { to: '/intake-forms', label: 'Intake Forms', icon: ClipboardList, kbd: '06' },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3, kbd: '07' },
+  { to: '/help', label: 'Help & Support', icon: HelpCircle, kbd: '07' },
+  { to: '/settings', label: 'Settings', icon: Settings, kbd: '08' },
 ];
 
 export function AppShell() {
@@ -173,6 +180,7 @@ export function AppShell() {
       </main>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <SessionTimeoutModal />
     </div>
   );
 }

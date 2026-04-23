@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "TMJConnect",
+    "slug": "tmjconnect",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "tmjconnect",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tmjconnect.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "TMJConnect uses Face ID to keep your health data private between sessions.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.tmjconnect.app",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "color": "#D4A843"
+        }
+      ],
+      "expo-font",
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TMJConnect needs access to your photos so you can set a profile picture.",
+          "cameraPermission": "TMJConnect needs access to your camera so you can take a profile picture."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "http://192.168.1.23:3000/api/v1",
+      "eas": {
+        "projectId": "4964bb77-14e8-4028-9663-ee23fb464948"
+      },
+      "router": {
+        "origin": false
+      }
+    },
+    "owner": "irfankhaan"
+  }
+}

@@ -1,10 +1,11 @@
 import type { Container } from '../../config/container';
 import { markAllNotificationsRead } from '../../db/queries/notifications.queries';
+import type { ScopedUser } from '../../utils/scopedQuery';
 
 type Deps = Pick<Container, 'db'>;
 
-export type MarkAllReadInput = { userId: string };
+export type MarkAllReadInput = { user: ScopedUser };
 
 export async function execute(deps: Deps, input: MarkAllReadInput): Promise<void> {
-  await markAllNotificationsRead(deps.db, input.userId);
+  await markAllNotificationsRead(deps.db, input.user);
 }

@@ -61,7 +61,7 @@ describe('scopeToUser — access control', () => {
     const patientB = await createTestPatient(db);
 
     // Insert a log for patient A only.
-    await upsertSymptomLog(db, patientA.id, baseLogData);
+    await upsertSymptomLog(db, { id: patientA.id, role: 'patient' }, baseLogData);
 
     // Query as patient A.
     const logsA = await db
@@ -84,8 +84,8 @@ describe('scopeToUser — access control', () => {
     const patientA = await createTestPatient(db);
     const patientB = await createTestPatient(db);
 
-    await upsertSymptomLog(db, patientA.id, baseLogData);
-    await upsertSymptomLog(db, patientB.id, {
+    await upsertSymptomLog(db, { id: patientA.id, role: 'patient' }, baseLogData);
+    await upsertSymptomLog(db, { id: patientB.id, role: 'patient' }, {
       ...baseLogData,
       logged_at: new Date('2026-04-09T10:00:00Z'),
     });
@@ -103,8 +103,8 @@ describe('scopeToUser — access control', () => {
     const patient = await createTestPatient(db);
 
     // Insert two logs on different days.
-    await upsertSymptomLog(db, patient.id, baseLogData);
-    await upsertSymptomLog(db, patient.id, {
+    await upsertSymptomLog(db, { id: patient.id, role: 'patient' }, baseLogData);
+    await upsertSymptomLog(db, { id: patient.id, role: 'patient' }, {
       ...baseLogData,
       pain_level: 8,
       logged_at: new Date('2026-04-09T10:00:00Z'),
@@ -146,7 +146,7 @@ describe('upsertSymptomLog — transaction', () => {
     const { db } = container;
     const patient = await createTestPatient(db);
 
-    const { created } = await upsertSymptomLog(db, patient.id, logData);
+    const { created } = await upsertSymptomLog(db, { id: patient.id, role: 'patient' }, logData);
     expect(created).toBe(true);
 
     const rows = await db
@@ -160,8 +160,8 @@ describe('upsertSymptomLog — transaction', () => {
     const { db } = container;
     const patient = await createTestPatient(db);
 
-    await upsertSymptomLog(db, patient.id, logData);
-    const { created } = await upsertSymptomLog(db, patient.id, {
+    await upsertSymptomLog(db, { id: patient.id, role: 'patient' }, logData);
+    const { created } = await upsertSymptomLog(db, { id: patient.id, role: 'patient' }, {
       ...logData,
       pain_level: 9,
     });
@@ -182,8 +182,8 @@ describe('upsertSymptomLog — transaction', () => {
 
     // Fire two upserts simultaneously — the FOR UPDATE lock serialises them.
     await Promise.all([
-      upsertSymptomLog(db, patient.id, logData),
-      upsertSymptomLog(db, patient.id, { ...logData, pain_level: 7 }),
+      upsertSymptomLog(db, { id: patient.id, role: 'patient' }, logData),
+      upsertSymptomLog(db, { id: patient.id, role: 'patient' }, { ...logData, pain_level: 7 }),
     ]);
 
     const rows = await db
@@ -197,11 +197,11 @@ describe('upsertSymptomLog — transaction', () => {
     const { db } = container;
     const patient = await createTestPatient(db);
 
-    await upsertSymptomLog(db, patient.id, {
+    await upsertSymptomLog(db, { id: patient.id, role: 'patient' }, {
       ...logData,
       logged_at: new Date('2026-04-10T10:00:00Z'),
     });
-    await upsertSymptomLog(db, patient.id, {
+    await upsertSymptomLog(db, { id: patient.id, role: 'patient' }, {
       ...logData,
       logged_at: new Date('2026-04-09T10:00:00Z'),
     });

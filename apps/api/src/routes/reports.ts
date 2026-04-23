@@ -8,9 +8,11 @@ import {
   respondToReportSchema,
   reportInboxQuerySchema,
   reportRequestListQuerySchema,
+  patientReportsListQuerySchema,
 } from '@tmjconnect/shared';
 import * as Submit from '../use-cases/reports/submit';
 import * as ProviderInbox from '../use-cases/reports/provider-inbox';
+import * as PatientInbox from '../use-cases/reports/patient-inbox';
 import * as GetReport from '../use-cases/reports/get-report';
 import * as Respond from '../use-cases/reports/respond';
 import * as Review from '../use-cases/reports/review';
@@ -51,6 +53,30 @@ export function reportsRouter(container: Container) {
           urgency?: 'routine' | 'concerning' | 'urgent';
         };
         const result = await ProviderInbox.execute(container, { providerId: req.user!.id, page, limit, ...filters });
+        res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── Patient's own submitted reports ────────────────────────────────────────
+  // Must be declared BEFORE `/:id` routes — otherwise Express matches `/mine`
+  // to `/:id` with id='mine' and the UUID parse fails.
+  router.get(
+    '/mine',
+    authorize('patient'),
+    validate(patientReportsListQuerySchema, 'query'),
+    auditLog('patient_viewed_own_reports', 'report'),
+    async (req, res, next) => {
+      try {
+        const { page, limit, urgency, from, to } = req.query as unknown as {
+          page: number; limit: number;
+          urgency?: 'routine' | 'concerning' | 'urgent';
+          from?: string; to?: string;
+        };
+        const result = await PatientInbox.execute(container, {
+          patientId: req.user!.id,
+          page, limit, urgency, from, to,
+        });
         res.json({ data: result.items, meta: result.meta });
       } catch (err) { next(err); }
     },

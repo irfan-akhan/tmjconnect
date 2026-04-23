@@ -32,6 +32,12 @@ tags:
     description: Patient-provider linking codes, acceptance, disconnection
   - name: Uploads
     description: File uploads (video, avatar, report photos)
+  - name: Tracking
+    description: Jaw mobility, medication, and sleep quality tracking
+  - name: Insights
+    description: Pain trend analytics, exercise/medication/sleep correlations
+  - name: Admin
+    description: User management, audit logs, system metrics
 
 components:
   securitySchemes:
@@ -657,6 +663,199 @@ components:
           description: "e.g. invalid_password, account_locked, email_not_verified"
         created_at: { type: string, format: date-time }
 
+    # ─── Insights & Correlation ────────────────────────────────────────────
+    PainInsights:
+      description: Aggregated pain analytics over a configurable time window
+      type: object
+      required: [daily_averages, day_of_week, trigger_frequency, pain_type_frequency, overall]
+      properties:
+        daily_averages:
+          type: array
+          items:
+            type: object
+            required: [date, avg_pain, count]
+            properties:
+              date: { type: string, format: date }
+              avg_pain: { type: number }
+              count: { type: integer }
+        day_of_week:
+          type: array
+          items:
+            type: object
+            required: [day, avg_pain, count]
+            properties:
+              day: { type: integer, minimum: 0, maximum: 6, description: "0=Sun, 6=Sat" }
+              avg_pain: { type: number }
+              count: { type: integer }
+        trigger_frequency:
+          type: array
+          items:
+            type: object
+            required: [trigger, count]
+            properties:
+              trigger: { type: string }
+              count: { type: integer }
+        pain_type_frequency:
+          type: array
+          items:
+            type: object
+            required: [type, count]
+            properties:
+              type: { type: string }
+              count: { type: integer }
+        overall:
+          type: object
+          required: [avg_pain, total_logs, trend]
+          properties:
+            avg_pain: { type: number, description: "Average pain over the period" }
+            total_logs: { type: integer }
+            trend: { type: number, description: "Change from prior half-period (negative = improving)" }
+
+    ExerciseCorrelation:
+      description: Pain comparison between exercise and rest days
+      type: object
+      required: [exercise_days_avg_pain, exercise_days_count, no_exercise_days_avg_pain, no_exercise_days_count]
+      properties:
+        exercise_days_avg_pain: { type: number }
+        exercise_days_count: { type: integer }
+        no_exercise_days_avg_pain: { type: number }
+        no_exercise_days_count: { type: integer }
+
+    SymptomStats:
+      description: Lightweight lifetime symptom statistics
+      type: object
+      required: [first_logged_at, total_count]
+      properties:
+        first_logged_at: { type: [string, "null"], format: date-time }
+        total_count: { type: integer }
+
+    # ─── Dashboard ─────────────────────────────────────────────────────────
+    DashboardData:
+      description: Consolidated patient dashboard payload (single API call)
+      type: object
+      required: [profile, today_log, streak, assignments, notifications, unread_count]
+      properties:
+        profile:
+          type: [object, "null"]
+          properties:
+            first_name: { type: string }
+            last_name: { type: string }
+            avatar_url: { type: [string, "null"] }
+        today_log:
+          type: [object, "null"]
+          description: "Null if no log today"
+          properties:
+            id: { type: string, format: uuid }
+            pain_level: { type: integer, minimum: 0, maximum: 10 }
+            pain_types: { type: array, items: { type: string } }
+            logged_at: { type: string, format: date-time }
+        streak:
+          type: object
+          required: [streak, longest]
+          properties:
+            streak: { type: integer, description: "Current consecutive logging days" }
+            longest: { type: integer, description: "All-time longest streak" }
+        assignments:
+          type: array
+          items:
+            type: object
+            required: [assignment_id, title, status, completed_today]
+            properties:
+              assignment_id: { type: string, format: uuid }
+              title: { type: string }
+              category: { type: string }
+              duration_seconds: { type: integer }
+              frequency: { type: string }
+              sets: { type: integer }
+              status: { type: string }
+              completed_today: { type: boolean }
+        notifications:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+        unread_count: { type: integer }
+
+    # ─── Tracking: Jaw Mobility ────────────────────────────────────────────
+    MobilityLog:
+      description: Jaw mobility measurement entry
+      type: object
+      required: [id, measurement_mm, method, logged_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        measurement_mm: { type: integer, minimum: 1, maximum: 80, description: "Max mouth opening in millimeters" }
+        method: { type: string, enum: [fingers, ruler], description: "Measurement method" }
+        notes: { type: [string, "null"] }
+        logged_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    MobilityTrendPoint:
+      description: Daily aggregated mobility measurement
+      type: object
+      required: [date, avg_mm, count]
+      properties:
+        date: { type: string, format: date }
+        avg_mm: { type: integer }
+        count: { type: integer }
+
+    # ─── Tracking: Medications ─────────────────────────────────────────────
+    MedicationLog:
+      description: Single medication dose record
+      type: object
+      required: [id, medication_name, logged_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        medication_name: { type: string, maxLength: 120 }
+        dosage: { type: [string, "null"], maxLength: 60 }
+        notes: { type: [string, "null"] }
+        logged_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    MedicationCorrelation:
+      description: Pain comparison between medication and non-medication days
+      type: object
+      required: [medication_days_avg_pain, medication_days_count, no_medication_days_avg_pain, no_medication_days_count]
+      properties:
+        medication_days_avg_pain: { type: number }
+        medication_days_count: { type: integer }
+        no_medication_days_avg_pain: { type: number }
+        no_medication_days_count: { type: integer }
+
+    # ─── Tracking: Sleep ───────────────────────────────────────────────────
+    SleepLog:
+      description: Morning sleep quality check-in
+      type: object
+      required: [id, quality, bruxism_aware, logged_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        quality: { type: integer, minimum: 1, maximum: 5, description: "1=terrible, 5=great" }
+        hours_slept: { type: [number, "null"], description: "Hours slept (e.g. 7.5)" }
+        bruxism_aware: { type: boolean, description: "Did user notice teeth grinding/clenching?" }
+        morning_stiffness: { type: [integer, "null"], minimum: 0, maximum: 10, description: "Morning jaw stiffness level" }
+        notes: { type: [string, "null"] }
+        logged_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    SleepCorrelationBucket:
+      description: Sleep quality vs pain correlation bucket
+      type: object
+      required: [quality, avg_pain, days]
+      properties:
+        quality: { type: string, enum: [good, fair, poor] }
+        avg_pain: { type: number }
+        days: { type: integer }
+
+    # ─── Activity ──────────────────────────────────────────────────────────
+    ActivityEvent:
+      description: Account activity log entry
+      type: object
+      required: [id, action, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string, description: "e.g. auth.login, profile_updated, password_changed" }
+        resource_type: { type: [string, "null"] }
+        ip_address: { type: [string, "null"] }
+        user_agent: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
 paths:
   # ──────────────────────────── AUTH — PATIENT FLOW ─────────────────────────────
   /auth/patient/register:
@@ -670,12 +869,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, first_name, last_name]
+              required: [email, password, first_name, last_name, phone]
               properties:
                 email: { type: string, format: email }
                 password: { type: string, minLength: 8, description: "Min 8 chars, 1 digit, 1 special char" }
                 first_name: { type: string }
                 last_name: { type: string }
+                phone: { type: string, pattern: '^\+[1-9]\d{7,14}$', description: "E.164 format (e.g. +15551234567). Required for SMS MFA." }
                 timezone: { type: string }
       responses:
         '201': { description: Account created. Check email for 6-digit verification code. }
@@ -769,12 +969,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, first_name, last_name, license_number, license_type, specialty, clinic_name]
+              required: [email, password, first_name, last_name, phone, license_number, license_type, specialty, clinic_name]
               properties:
                 email: { type: string, format: email }
                 password: { type: string, minLength: 8, description: "Min 8 chars, 1 digit, 1 special char" }
                 first_name: { type: string }
                 last_name: { type: string }
+                phone: { type: string, pattern: '^\+[1-9]\d{7,14}$', description: "E.164 format (e.g. +15551234567). Required for SMS MFA." }
                 timezone: { type: string }
                 license_number: { type: string }
                 license_type: { type: string }
@@ -2312,3 +2513,303 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/UploadResult' }
+
+  # ──────────────────────── SYMPTOMS — ADDITIONAL ENDPOINTS ─────────────────
+  /symptoms/stats:
+    get:
+      tags: [Symptoms]
+      summary: Get lifetime symptom statistics
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SymptomStats' }
+
+  /symptoms/insights:
+    get:
+      tags: [Insights]
+      summary: Get pain trend analytics
+      description: "Returns daily averages, day-of-week patterns, top triggers, pain types, and overall trend for the specified period."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30, minimum: 7, maximum: 365 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PainInsights' }
+
+  /symptoms/correlation:
+    get:
+      tags: [Insights]
+      summary: Get exercise vs pain correlation
+      description: "Compares average pain on days with exercise completions vs rest days."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ExerciseCorrelation' }
+
+  # ──────────────────────── PATIENT — DASHBOARD + ACTIVITY ──────────────────
+  /patients/dashboard:
+    get:
+      tags: [Patients]
+      summary: Consolidated dashboard data
+      description: "Single call replacing 6 separate requests. Returns profile, today's log, streak, active assignments, recent notifications, and unread count."
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DashboardData' }
+
+  /patients/me/activity:
+    get:
+      tags: [Patients]
+      summary: Get account activity log
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ActivityEvent' }
+
+  # ──────────────────────── TRACKING — JAW MOBILITY ─────────────────────────
+  /tracking/mobility:
+    post:
+      tags: [Tracking]
+      summary: Log jaw mobility measurement
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [measurement_mm]
+              properties:
+                measurement_mm: { type: integer, minimum: 1, maximum: 80 }
+                method: { type: string, enum: [fingers, ruler], default: fingers }
+                notes: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MobilityLog' }
+    get:
+      tags: [Tracking]
+      summary: List mobility logs (cursor-paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MobilityLog' }
+
+  /tracking/mobility/trend:
+    get:
+      tags: [Tracking]
+      summary: Get jaw mobility trend (daily averages)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 60 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MobilityTrendPoint' }
+
+  # ──────────────────────── TRACKING — MEDICATIONS ──────────────────────────
+  /tracking/medications:
+    post:
+      tags: [Tracking]
+      summary: Log medication dose
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [medication_name]
+              properties:
+                medication_name: { type: string, maxLength: 120 }
+                dosage: { type: string, maxLength: 60 }
+                notes: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MedicationLog' }
+    get:
+      tags: [Tracking]
+      summary: List medication logs (cursor-paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MedicationLog' }
+
+  /tracking/medications/correlation:
+    get:
+      tags: [Tracking]
+      summary: Medication vs pain correlation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MedicationCorrelation' }
+
+  # ──────────────────────── TRACKING — SLEEP ────────────────────────────────
+  /tracking/sleep:
+    post:
+      tags: [Tracking]
+      summary: Log morning sleep check-in
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quality]
+              properties:
+                quality: { type: integer, minimum: 1, maximum: 5 }
+                hours_slept: { type: number }
+                bruxism_aware: { type: boolean }
+                morning_stiffness: { type: integer, minimum: 0, maximum: 10 }
+                notes: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SleepLog' }
+    get:
+      tags: [Tracking]
+      summary: List sleep logs (cursor-paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SleepLog' }
+
+  /tracking/sleep/correlation:
+    get:
+      tags: [Tracking]
+      summary: Sleep quality vs pain correlation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SleepCorrelationBucket' }

@@ -46,6 +46,7 @@ import {
   SystemMetricsPage,
   ScheduledReportsPage,
   FeatureFlagsPage,
+  AnalyticsPage,
 } from './lazyPages';
 // Centralised dayjs plugin registration — every page that imports from
 // `utils/time` triggers this, but importing once at the App root guarantees
@@ -109,6 +110,7 @@ function ThemedApp() {
                         <Route path="/system" element={<SystemMetricsPage />} />
                         <Route path="/scheduled-reports" element={<ScheduledReportsPage />} />
                         <Route path="/feature-flags" element={<FeatureFlagsPage />} />
+                        <Route path="/analytics" element={<AnalyticsPage />} />
                         <Route path="*" element={<NotFoundPage />} />
                       </Route>
                     </Route>

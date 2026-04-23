@@ -82,10 +82,19 @@ import {
   updateFeatureFlag,
   deleteFeatureFlag,
 } from '../db/queries/admin-p1p2.queries';
+import { getPlatformAnalytics } from '../db/queries/admin-analytics.queries';
 
 export function adminRouter(container: Container) {
   const router = Router();
   router.use(authenticate, authorize('admin'), checkSessionTimeout(container.db));
+
+  // ─── Platform analytics ─────────────────────────────────────────────────────
+  router.get('/analytics', auditLog('admin_viewed_analytics', 'platform'), async (req, res, next) => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 7), 365);
+      res.json({ data: await getPlatformAnalytics(container.db, days) });
+    } catch (err) { next(err); }
+  });
 
   // ─── Dashboard stats (extended with urgent reports) ─────────────────────────
   router.get('/stats', async (_req, res, next) => {

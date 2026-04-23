@@ -73,6 +73,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Jane',
           last_name: 'Doe',
+          phone: '+15551234567',
         });
 
       expect(res.status).toBe(201);
@@ -90,6 +91,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Jane',
           last_name: 'Doe',
+          phone: '+15551234567',
         });
 
       expect(res.status).toBe(409);
@@ -104,6 +106,7 @@ describe('Auth Routes', () => {
           password: 'weakpass',
           first_name: 'Jane',
           last_name: 'Doe',
+          phone: '+15551234567',
         });
 
       expect(res.status).toBe(400);
@@ -118,6 +121,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Jane',
           last_name: 'Doe',
+          phone: '+15551234567',
         });
 
       expect(res.status).toBe(201);
@@ -133,6 +137,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Jane',
           last_name: 'Doe',
+          phone: '+15551234567',
         });
       // user_id is null on registration (no authenticated user yet) — match by action only.
       const entry = await waitForAuditEntry(container.db, {
@@ -156,6 +161,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Dr.',
           last_name: 'Smith',
+          phone: '+15551234567',
           license_number: 'TX-001',
           license_type: 'DDS',
           specialty: 'Orofacial Pain',
@@ -173,6 +179,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Dr.',
           last_name: 'Smith',
+          phone: '+15551234567',
         });
 
       expect(res.status).toBe(400);
@@ -193,6 +200,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Jane',
           last_name: 'Doe',
+          phone: '+15551234567',
         });
 
       const code = await getVerifyCode(container, 'toverify@test.com');
@@ -214,6 +222,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Dr.',
           last_name: 'Smith',
+          phone: '+15551234567',
           license_number: 'TX-001',
           license_type: 'DDS',
           specialty: 'Orofacial Pain',
@@ -240,6 +249,7 @@ describe('Auth Routes', () => {
           password: 'Test@1234!',
           first_name: 'Jane',
           last_name: 'Doe',
+          phone: '+15551234567',
         });
 
       const res = await request(app)
