@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { PageHeader } from '@/components/ui/page-header';
+import { Section } from '@/components/ui/section';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useProviderAnalytics } from '@/features/analytics/queries';
@@ -412,20 +413,19 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-sm border border-border/70 bg-card p-5 shadow-navy-xs">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-serif text-xl tracking-tightest">{title}</h3>
-          {subtitle && (
-            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              {subtitle}
-            </p>
-          )}
-        </div>
-        {action}
-      </div>
+    <Section
+      title={title}
+      subtitle={
+        subtitle ? (
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            {subtitle}
+          </span>
+        ) : undefined
+      }
+      action={action}
+    >
       {children}
-    </section>
+    </Section>
   );
 }
 

@@ -17,6 +17,7 @@ import * as GetReport from '../use-cases/reports/get-report';
 import * as Respond from '../use-cases/reports/respond';
 import * as Review from '../use-cases/reports/review';
 import * as Flag from '../use-cases/reports/flag';
+import * as MarkAllViewed from '../use-cases/reports/mark-all-viewed';
 import * as ListRequests from '../use-cases/reports/list-requests';
 import * as DismissRequest from '../use-cases/reports/dismiss-request';
 
@@ -54,6 +55,22 @@ export function reportsRouter(container: Container) {
         };
         const result = await ProviderInbox.execute(container, { providerId: req.user!.id, page, limit, ...filters });
         res.json({ data: result.items, meta: result.meta });
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── Bulk: mark all submitted inbox reports as viewed ────────────────────────
+  // Idempotent. Returns the count actually updated so the UI can confirm.
+  // Defined before `/:id` routes to avoid `/inbox/mark-viewed` being matched
+  // as `id = 'inbox'`.
+  router.patch(
+    '/inbox/mark-viewed',
+    authorize('provider'),
+    auditLog('provider_marked_inbox_viewed', 'report'),
+    async (req, res, next) => {
+      try {
+        const data = await MarkAllViewed.execute(container, { providerId: req.user!.id });
+        res.json({ data });
       } catch (err) { next(err); }
     },
   );

@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, text, pgEnum } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from './users';
 
@@ -35,4 +35,9 @@ export const patientProviderLinks = pgTable('patient_provider_links', {
   linked_at: timestamp('linked_at', { withTimezone: true }).notNull().default(sql`NOW()`),
   // Nullable. Set to NOW() on disconnect. NULL = active link.
   unlinked_at: timestamp('unlinked_at', { withTimezone: true }),
+  // Patient-granted scope of what the provider can see. Only 'full_clinical' today.
+  consent_scope: varchar('consent_scope', { length: 20 }).notNull().default('full_clinical'),
+  // Provider's working diagnosis for this patient. Tied to the link, not the patient,
+  // so it is severed when the link is unlinked.
+  diagnosis: text('diagnosis'),
 });

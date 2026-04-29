@@ -37,15 +37,27 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
     }
   }
 
+  // FormData / Blob bodies must NOT be JSON-stringified, and the browser sets
+  // the multipart Content-Type (with boundary) automatically — we must omit
+  // our default 'application/json' or the boundary is missing and the API 400s.
+  const isMultipart = typeof FormData !== 'undefined' && body instanceof FormData;
+  const isBlob = typeof Blob !== 'undefined' && body instanceof Blob;
+  const passthroughBody = isMultipart || isBlob;
+
   const res = await fetch(url.toString().replace(window.location.origin, ''), {
     ...rest,
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(passthroughBody ? {} : { 'Content-Type': 'application/json' }),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...headers,
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body:
+      body === undefined
+        ? undefined
+        : passthroughBody
+          ? (body as BodyInit)
+          : JSON.stringify(body),
   });
 
   if (res.status === 401) {

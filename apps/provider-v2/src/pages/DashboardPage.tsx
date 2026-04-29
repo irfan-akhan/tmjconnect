@@ -23,6 +23,24 @@ import type { PatientRow } from '@/features/patients/types';
 
 type Bucket = 'all' | 'attention' | 'recent' | 'inactive' | 'pending';
 
+// Maps a backend KpiDelta into the props KpiCard expects (delta string + trend
+// direction). When the prior baseline is null, the card just shows the hint.
+// invertGood flips the colour for metrics where "down is good" (e.g. urgent).
+function deltaProps(
+  d: { value: number | null; pct: number | null } | undefined,
+  hint: string,
+  invertGood = false,
+): { delta?: React.ReactNode; trend?: 'up' | 'down' | 'flat'; hint: React.ReactNode } {
+  if (!d || d.value == null) return { hint };
+  if (d.value === 0) return { delta: 'No change', trend: 'flat', hint };
+  const isUp = d.value > 0;
+  const positive = invertGood ? !isUp : isUp;
+  const trend: 'up' | 'down' = isUp ? 'up' : 'down';
+  const sign = isUp ? '+' : '';
+  const pctStr = d.pct == null ? `${sign}${d.value}` : `${sign}${d.value} (${d.pct > 0 ? '+' : ''}${d.pct}%)`;
+  return { delta: pctStr, trend: positive ? trend : trend, hint };
+}
+
 function painSeverity(value: number | null): {
   variant: 'urgent' | 'moderate' | 'improving' | 'stable' | 'inactive';
   label: string;
@@ -125,9 +143,12 @@ export function DashboardPage() {
       key: 'trend',
       header: '14-day trend',
       width: '160px',
-      // TODO(api): backend doesn't return time-series yet; sparkline shows
-      // empty state until the patient list endpoint exposes daily pain values.
-      cell: () => <Sparkline data={[]} height={28} />,
+      cell: (p) => (
+        <Sparkline
+          data={(p.daily_pain_14d ?? []).map((d) => d.pain_level)}
+          height={28}
+        />
+      ),
     },
     {
       key: 'status',
@@ -179,33 +200,32 @@ export function DashboardPage() {
       />
 
       {/* KPI row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KpiCard
           label="Total patients"
           value={isLoading ? '—' : data.activePatients}
           icon={<Users className="h-4 w-4" />}
-          // TODO(api): no period-over-period delta yet; hint is static.
-          hint="Linked to your practice"
+          {...deltaProps(data.deltas?.activePatients, 'new this week')}
         />
         <KpiCard
           accent="gold"
           label="Reports awaiting"
           value={isLoading ? '—' : data.unreadReports}
           icon={<Inbox className="h-4 w-4" />}
-          hint="In your inbox"
+          {...deltaProps(data.deltas?.unreadReports, 'vs prior 7d')}
         />
         <KpiCard
           accent="urgent"
           label="Urgent (pain ≥7)"
-          value={isLoading ? '—' : urgentCount}
+          value={isLoading ? '—' : data.urgentReports}
           icon={<TriangleAlert className="h-4 w-4" />}
-          hint="Triage these first"
+          {...deltaProps(data.deltas?.urgentReports, 'vs prior 7d', /* invertGood */ true)}
         />
         <KpiCard
           accent="ok"
           label="Pending invites"
           value={isLoading ? '—' : data.pendingCodes}
-          hint="Linking codes unaccepted"
+          {...deltaProps(data.deltas?.pendingCodes, 'codes issued · 7d')}
         />
       </div>
 
@@ -237,7 +257,9 @@ export function DashboardPage() {
           rowKey={(p) => p.patient_id}
           loading={isLoading}
           onRowClick={(p) => navigate(`/patients/${p.patient_id}`)}
-          rowClassName={(p) => ((p.avg_pain_7d ?? 0) >= 7 ? 'bg-err/5 hover:bg-err/10' : undefined)}
+          rowClassName={(p) =>
+            (p.avg_pain_7d ?? 0) >= 7 ? 'bg-err/10 hover:bg-err/15' : undefined
+          }
           emptyState={
             <div className="text-center font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
               No patients match this filter.

@@ -11,7 +11,7 @@
  */
 import { eq, sql, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
-import { reports, reportResponses, idempotencyKeys } from '../schema';
+import { reports, reportResponses, idempotencyKeys, profiles } from '../schema';
 import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
@@ -338,6 +338,46 @@ export async function getReportForProvider(db: DbClient, reportId: string, provi
   return row ?? null;
 }
 
+/**
+ * Same scope check as getReportForProvider, but joins profiles so the detail
+ * view can render the patient's name + initials without a second round-trip.
+ * Used by GET /reports/:id only — mutations (review, respond) keep using the
+ * lighter getReportForProvider since they don't need profile fields.
+ */
+export async function getReportWithPatientForProvider(
+  db: DbClient,
+  reportId: string,
+  provider: ScopedUser,
+) {
+  const [row] = await db
+    .select({
+      id: reports.id,
+      patient_id: reports.patient_id,
+      provider_id: reports.provider_id,
+      urgency: reports.urgency,
+      pain_level: reports.pain_level,
+      description: reports.description,
+      photo_url: reports.photo_url,
+      period_start: reports.period_start,
+      period_end: reports.period_end,
+      summary_data: reports.summary_data,
+      patient_notes: reports.patient_notes,
+      status: reports.status,
+      flagged: reports.flagged,
+      submitted_at: reports.submitted_at,
+      viewed_at: reports.viewed_at,
+      reviewed_at: reports.reviewed_at,
+      patient_first_name: profiles.first_name,
+      patient_last_name: profiles.last_name,
+      patient_avatar_url: profiles.avatar_url,
+    })
+    .from(reports)
+    .innerJoin(profiles, eq(profiles.user_id, reports.patient_id))
+    .where(scopeToUser(eq(reports.id, reportId), reports, provider))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getReportResponsesForProvider(db: DbClient, reportId: string) {
   // Provider sees internal_notes.
   return db
@@ -352,6 +392,24 @@ export async function markReportViewed(db: DbClient, reportId: string) {
     .update(reports)
     .set({ status: 'viewed', viewed_at: sql`NOW()` })
     .where(sql`${reports.id} = ${reportId} AND ${reports.status} = 'submitted'`);
+}
+
+/**
+ * Bulk-mark every still-submitted report assigned to this provider as viewed.
+ * "Mark all read" inbox action — only touches `status = 'submitted'` rows so
+ * already-reviewed/responded reports are not regressed. Returns the count of
+ * rows actually updated so the UI can show "Marked N reports as read."
+ */
+export async function markAllReportsViewedForProvider(
+  db: DbClient,
+  providerId: string,
+): Promise<number> {
+  const updated = await db
+    .update(reports)
+    .set({ status: 'viewed', viewed_at: sql`NOW()` })
+    .where(sql`${reports.provider_id} = ${providerId} AND ${reports.status} = 'submitted'`)
+    .returning({ id: reports.id });
+  return updated.length;
 }
 
 export async function markReportReviewed(db: DbClient, reportId: string) {

@@ -9,7 +9,6 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ 
 const PatientsPage = lazy(() => import('./pages/PatientsPage').then((m) => ({ default: m.PatientsPage })));
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage').then((m) => ({ default: m.PatientDetailPage })));
 const ReportsInboxPage = lazy(() => import('./pages/ReportsInboxPage').then((m) => ({ default: m.ReportsInboxPage })));
-const ReportDetailPage = lazy(() => import('./pages/ReportDetailPage').then((m) => ({ default: m.ReportDetailPage })));
 const ExercisesPage = lazy(() => import('./pages/ExercisesPage').then((m) => ({ default: m.ExercisesPage })));
 const LinkingPage = lazy(() => import('./pages/LinkingPage').then((m) => ({ default: m.LinkingPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
@@ -58,7 +57,7 @@ export function App() {
         <Route path="/patients" element={<Page><PatientsPage /></Page>} />
         <Route path="/patients/:patientId" element={<Page><PatientDetailPage /></Page>} />
         <Route path="/reports" element={<Page><ReportsInboxPage /></Page>} />
-        <Route path="/reports/:reportId" element={<Page><ReportDetailPage /></Page>} />
+        <Route path="/reports/:reportId" element={<Page><ReportsInboxPage /></Page>} />
         <Route path="/exercises" element={<Page><ExercisesPage /></Page>} />
         <Route path="/linking" element={<Page><LinkingPage /></Page>} />
         <Route path="/analytics" element={<Page><AnalyticsPage /></Page>} />

@@ -1,59 +1,62 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import type { InboxRow } from '@/features/reports/queries';
-import type { LinkingCode } from '@/features/linking/queries';
 import type { PatientRow } from '@/features/patients/types';
 
-export type DashboardSummary = {
+export type KpiDelta = { value: number | null; pct: number | null };
+
+export type DashboardSummaryResponse = {
   activePatients: number;
   unreadReports: number;
   pendingCodes: number;
-  logsToday: number;
+  urgentReports: number;
+  deltas: {
+    activePatients: KpiDelta;
+    unreadReports: KpiDelta;
+    pendingCodes: KpiDelta;
+    urgentReports: KpiDelta;
+  };
+  recentPatients: Array<{
+    patient_id: string;
+    first_name: string;
+    last_name: string;
+    last_symptom_at: string | null;
+  }>;
   urgentInbox: InboxRow[];
-  recentPatients: PatientRow[];
 };
 
 /**
- * Dashboard aggregates several endpoints client-side. The backend has no
- * /dashboard/summary route yet — for now we fan out to the existing queries.
+ * Single round-trip dashboard summary. Combines KPI counts, period-over-period
+ * deltas, the urgent inbox slice, and recent patients (with daily pain series
+ * for the sparklines) — the patient list comes from /providers/patients so
+ * each row carries the full PatientRow shape (including daily_pain_14d).
  */
 export function useDashboardSummary() {
+  const summary = useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: () =>
+      apiFetch<{ data: DashboardSummaryResponse }>('/providers/dashboard/summary').then(
+        (r) => r.data,
+      ),
+  });
+
   const patients = useQuery({
     queryKey: ['dashboard', 'patients'],
     queryFn: () =>
       apiFetch<{ data: PatientRow[]; meta: { total: number } }>('/providers/patients', {
-        query: { page: 1, limit: 5 },
+        query: { page: 1, limit: 6 },
       }),
-  });
-
-  const unread = useQuery({
-    queryKey: ['dashboard', 'unread-reports'],
-    queryFn: () =>
-      apiFetch<{ data: InboxRow[]; meta: { total: number } }>('/reports/inbox', {
-        query: { page: 1, limit: 5, status: 'submitted' },
-      }),
-  });
-
-  const urgent = useQuery({
-    queryKey: ['dashboard', 'urgent-reports'],
-    queryFn: () =>
-      apiFetch<{ data: InboxRow[]; meta: { total: number } }>('/reports/inbox', {
-        query: { page: 1, limit: 5, urgency: 'urgent' },
-      }),
-  });
-
-  const codes = useQuery({
-    queryKey: ['linking', 'codes'],
-    queryFn: () => apiFetch<{ data: LinkingCode[] }>('/linking/codes').then((r) => r.data),
   });
 
   return {
-    isLoading: patients.isLoading || unread.isLoading || codes.isLoading,
+    isLoading: summary.isLoading || patients.isLoading,
     data: {
-      activePatients: patients.data?.meta.total ?? 0,
-      unreadReports: unread.data?.meta.total ?? 0,
-      pendingCodes: (codes.data ?? []).filter((c) => c.status === 'pending').length,
-      urgentInbox: urgent.data?.data ?? [],
+      activePatients: summary.data?.activePatients ?? 0,
+      unreadReports: summary.data?.unreadReports ?? 0,
+      pendingCodes: summary.data?.pendingCodes ?? 0,
+      urgentReports: summary.data?.urgentReports ?? 0,
+      deltas: summary.data?.deltas,
+      urgentInbox: summary.data?.urgentInbox ?? [],
       recentPatients: patients.data?.data ?? [],
     },
   };

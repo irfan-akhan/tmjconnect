@@ -44,7 +44,7 @@ export const FilterPill = React.forwardRef<HTMLButtonElement, FilterPillProps>(
             className={cn(
               'ml-1 rounded-sm px-1 py-0.5 text-[10px] tracking-wider',
               active
-                ? 'bg-navy-900/15 text-navy-900'
+                ? 'bg-navy-900/30 text-navy-900'
                 : urgent
                   ? 'bg-err/15 text-err-dark'
                   : 'bg-secondary text-muted-foreground',

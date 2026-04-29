@@ -126,6 +126,21 @@ export const featureFlags = pgTable('feature_flags', {
   created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
 });
 
+// ─── support_tickets ─────────────────────────────────────────────────────────────
+// Provider-submitted help/support requests. Status is operator-only — patients
+// never see this table. Backed by migration 0013.
+export const supportTickets = pgTable('support_tickets', {
+  id: uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  category: varchar('category', { length: 40 }).notNull(),
+  subject: varchar('subject', { length: 255 }).notNull(),
+  body: text('body').notNull(),
+  attach_diagnostic: boolean('attach_diagnostic').notNull().default(false),
+  status: varchar('status', { length: 20 }).notNull().default('open'),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+});
+
 // ─── job_runs ────────────────────────────────────────────────────────────────────
 export const jobRuns = pgTable('job_runs', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),

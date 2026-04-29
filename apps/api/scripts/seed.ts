@@ -7,7 +7,12 @@
  * Idempotent: truncates all tables before inserting.
  * NEVER run against production — the script checks NODE_ENV.
  */
-import 'dotenv/config';
+// Mirror env loader in src/config/env.ts: .env.${NODE_ENV} first, .env fallback.
+import * as dotenv from 'dotenv';
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+dotenv.config({ path: `.env.${nodeEnv}` });
+dotenv.config({ path: '.env' });
+
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { sql } from 'drizzle-orm';

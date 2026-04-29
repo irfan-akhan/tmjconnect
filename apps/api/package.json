@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
+    "build": "tsc && tsc -p tsconfig.scripts.json",
     "start": "node dist/index.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch --runInBand",
@@ -19,6 +19,7 @@
     "@aws-sdk/client-s3": "^3.540.0"
   },
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "@sentry/node": "^10.48.0",
     "@tmjconnect/shared": "*",
     "bcryptjs": "^2.4.3",
@@ -36,7 +37,6 @@
     "pino": "^9.0.0",
     "pino-http": "^9.0.0",
     "rate-limiter-flexible": "^5.0.3",
-    "resend": "^3.2.0",
     "swagger-ui-express": "^5.0.1",
     "ts-node": "^10.9.2",
     "twilio": "^5.0.4",

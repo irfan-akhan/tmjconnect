@@ -54,12 +54,13 @@ Generate each with: `openssl rand -hex 64`
 # 2. Enable backups in DO dashboard
 # 3. SSH in and run:
 
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
+# Install runtime packages
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y ufw nginx postgresql-16 git build-essential certbot python3-certbot-nginx gnupg
 
-# Install Docker Compose
-sudo apt install docker-compose-plugin
+# Install Node 20 (via NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
 
 # Enable firewall
 sudo ufw allow 22/tcp
@@ -74,11 +75,15 @@ sudo ufw enable
 ### SSL Certificate (Let's Encrypt)
 
 ```bash
-# Install certbot
-sudo apt install certbot
-sudo certbot certonly --standalone -d api.tmjconnect.com -d tmjconnect.com
+# After nginx vhosts are live and DNS resolves to the host:
+sudo certbot --nginx \
+  -d api.tmjconnect.com \
+  -d provider.tmjconnect.com \
+  -d admin.tmjconnect.com \
+  --email ops@tmjconnect.com --agree-tos --no-eff-email
 
-# Auto-renewal (already configured by certbot)
+# certbot.timer handles renewals twice a day — verify:
+systemctl list-timers | grep certbot
 sudo certbot renew --dry-run
 ```
 
@@ -111,22 +116,48 @@ sudo certbot renew --dry-run
 ## 4. Deploy
 
 ```bash
-# Clone repo on VPS
-git clone https://github.com/your-org/tmjconnect.git /opt/tmjconnect
+# Service user + directories
+sudo useradd --system --home /opt/tmjconnect --shell /bin/false tmjconnect
+sudo mkdir -p /opt/tmjconnect /var/lib/tmjconnect/uploads /etc/tmjconnect
+sudo chown -R tmjconnect:tmjconnect /opt/tmjconnect /var/lib/tmjconnect
+sudo chmod 750 /etc/tmjconnect
+
+# Postgres role + database
+sudo -u postgres psql <<'SQL'
+CREATE ROLE tmjconnect_api WITH LOGIN PASSWORD '<strong-random-pw>';
+CREATE DATABASE tmjconnect OWNER tmjconnect_api;
+SQL
+
+# Clone and install
+sudo -u tmjconnect git clone https://github.com/your-org/tmjconnect.git /opt/tmjconnect
 cd /opt/tmjconnect
+sudo -u tmjconnect npm ci
+sudo -u tmjconnect npm run build --workspace=packages/shared
+sudo -u tmjconnect npm run build --workspace=apps/api
+sudo -u tmjconnect npm run build --workspace=apps/provider
+sudo -u tmjconnect npm run build --workspace=apps/admin
 
-# Create production .env
-cp apps/api/.env.example apps/api/.env
-# Edit with production values (DB, secrets, service keys)
+# Environment file (loaded by the systemd unit)
+sudo vim /etc/tmjconnect/api.env   # fill DB, JWT secrets, MFA key, service keys
+sudo chown root:tmjconnect /etc/tmjconnect/api.env
+sudo chmod 640 /etc/tmjconnect/api.env
 
-# Build and start
-docker compose -f docker/docker-compose.yml up -d
+# Install the systemd unit (see docs/DEPLOYMENT.md for the template)
+sudo vim /etc/systemd/system/tmjconnect-api.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now tmjconnect-api
+
+# nginx vhosts for api/provider/admin subdomains
+sudo vim /etc/nginx/sites-available/tmjconnect
+sudo ln -s /etc/nginx/sites-available/tmjconnect /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
 
 # Run migrations
-docker compose -f docker/docker-compose.yml exec api npm run db:migrate
+sudo -u tmjconnect bash -c 'set -a; source /etc/tmjconnect/api.env; set +a; \
+  npm run db:migrate --workspace=apps/api'
 
 # Verify
-curl https://api.tmjconnect.com/api/v1/health
+curl https://api.tmjconnect.com/health
 ```
 
 ---

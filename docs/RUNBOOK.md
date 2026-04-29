@@ -92,7 +92,9 @@ The canonical backup script lives at [scripts/backup.sh](../scripts/backup.sh) i
 4. Verify first run: `bash /opt/tmjconnect/backup.sh && ls -lh /opt/tmjconnect/backups/`
 
 **Configurable env vars** (all optional — defaults match the standard pilot layout):
-`BACKUP_DIR`, `PASSPHRASE_FILE`, `CONTAINER`, `DB_USER`, `DB_NAME`, `RETENTION_DAYS`.
+`BACKUP_DIR`, `PASSPHRASE_FILE`, `PGHOST`, `PGPORT`, `DB_USER`, `DB_NAME`, `RETENTION_DAYS`.
+
+Requires `pg_dump`, `gzip`, and `gpg` installed on the host (they come with the standard PostgreSQL apt package + `gnupg`). Connection params follow the standard libpq env vars (`PGHOST`/`PGPORT`/`PGPASSWORD` etc.).
 
 > **Off-VPS replication (follow-up):** The 30-day local retention does not survive VPS loss. Before go-live, sync `/opt/tmjconnect/backups/` to a second host or encrypted object store (S3 with SSE-KMS). Cheapest pilot option: `rclone sync` to Backblaze B2 on the same cron.
 
@@ -105,16 +107,16 @@ gpg --batch --decrypt --passphrase-file /opt/tmjconnect/.backup_passphrase \
   | gunzip > /tmp/restore.sql
 
 # Restore to a NEW database (never overwrite production directly).
-docker exec -i tmjconnect-postgres psql -U postgres -c "CREATE DATABASE tmjconnect_restore;"
-docker exec -i tmjconnect-postgres psql -U postgres -d tmjconnect_restore < /tmp/restore.sql
+sudo -u postgres psql -c "CREATE DATABASE tmjconnect_restore OWNER tmjconnect_api;"
+sudo -u postgres psql -d tmjconnect_restore -f /tmp/restore.sql
 
 # Verify row counts against production (spot-check critical tables).
-docker exec tmjconnect-postgres psql -U postgres -d tmjconnect_restore \
+sudo -u postgres psql -d tmjconnect_restore \
   -c "SELECT 'users' AS tbl, count(*) FROM users UNION ALL SELECT 'audit_logs', count(*) FROM audit_logs UNION ALL SELECT 'symptom_logs', count(*) FROM symptom_logs;"
 
 # Clean up.
 rm /tmp/restore.sql
-docker exec tmjconnect-postgres psql -U postgres -c "DROP DATABASE tmjconnect_restore;"
+sudo -u postgres psql -c "DROP DATABASE tmjconnect_restore;"
 ```
 
 ### 2.3 Restore drills
@@ -165,21 +167,21 @@ RDS automated snapshots with 7-day retention are enabled by default. Point-in-ti
 ### 3.3 Playbooks
 
 #### Database outage
-1. Check `GET /health` — if `checks.database: "failed"`, confirm via `docker exec tmjconnect-postgres pg_isready`.
-2. Check Docker: `docker compose ps`. Restart if exited: `docker compose up -d postgres`.
+1. Check `GET /health` — if `checks.database: "failed"`, confirm via `sudo -u postgres pg_isready`.
+2. Check the service: `sudo systemctl status postgresql`. Restart if failed: `sudo systemctl restart postgresql`.
 3. Check disk space: `df -h`. PostgreSQL crashes on full disk.
-4. Check logs: `docker compose logs --tail=50 postgres`.
-5. If data corruption: stop API, restore from latest backup (Section 2.2), investigate root cause.
+4. Check logs: `sudo journalctl -u postgresql --since "30 min ago"`.
+5. If data corruption: `sudo systemctl stop tmjconnect-api`, restore from latest backup (Section 2.2), investigate root cause.
 
 #### Sentry error spike (P1)
 1. Open Sentry dashboard. Filter by `requestId` tag to isolate the failing path.
-2. Check if the spike correlates with a deploy (rollback if so: `docker compose pull && docker compose up -d` with previous image tag).
+2. Check if the spike correlates with a deploy (rollback via `git checkout <previous-tag> && npm ci && npm run build && sudo systemctl restart tmjconnect-api`).
 3. Check external service status pages (Resend, Twilio, Firebase).
 4. If the error is in auth or audit code paths: treat as potential P0 until ruled out.
 
 #### Suspected data breach (P0)
-1. **Contain immediately:** Rotate `JWT_SECRET` and `JWT_REFRESH_SECRET` (forces all users to re-login). Rotate `DATABASE_URL` password if DB compromise suspected.
-2. Preserve evidence: `docker compose logs > /tmp/incident-$(date +%s).log` before any restarts.
+1. **Contain immediately:** Rotate `JWT_SECRET` and `JWT_REFRESH_SECRET` (forces all users to re-login). Rotate the DB password if DB compromise suspected.
+2. Preserve evidence: `sudo journalctl -u tmjconnect-api --since "24 hours ago" > /tmp/incident-$(date +%s).log` before any restarts.
 3. Query scope: `SELECT user_id, action, created_at FROM audit_logs WHERE created_at > '<suspected_start>' ORDER BY created_at;`
 4. Query login anomalies: `SELECT * FROM login_events WHERE created_at > '<suspected_start>' AND success = false ORDER BY created_at;`
 5. Notify OROFACIAL leadership within 1 hour.
@@ -231,8 +233,8 @@ _Workflow file: `.github/workflows/deploy.yml` — to be created._
 Expected flow:
 1. Push to `main` → trigger workflow.
 2. `npm ci` → `npm run build` → `npm test` (against test DB in CI).
-3. Build Docker image → push to GitHub Container Registry (GHCR).
-4. SSH into VPS → `docker compose pull` → `docker compose up -d`.
+3. `rsync` the built `apps/*/dist/` and sources to the VPS under `/opt/tmjconnect`.
+4. SSH into VPS → `npm ci --omit=dev` → `npm run db:migrate --workspace=apps/api` → `sudo systemctl restart tmjconnect-api`.
 5. Wait 10s → `curl -f https://api.tmjconnect.com/health` → verify 200.
 
 ### 4.2 Manual deployment (fallback)
@@ -240,8 +242,15 @@ Expected flow:
 ```bash
 # On the VPS:
 cd /opt/tmjconnect
-docker compose pull
-docker compose up -d
+sudo -u tmjconnect git pull
+sudo -u tmjconnect npm ci
+sudo -u tmjconnect npm run build --workspace=packages/shared
+sudo -u tmjconnect npm run build --workspace=apps/api
+sudo -u tmjconnect npm run build --workspace=apps/provider
+sudo -u tmjconnect npm run build --workspace=apps/admin
+sudo -u tmjconnect bash -c 'set -a; source /etc/tmjconnect/api.env; set +a; \
+  npm run db:migrate --workspace=apps/api'
+sudo systemctl restart tmjconnect-api
 
 # Verify:
 curl -sf http://localhost:3000/health | jq .
@@ -251,11 +260,18 @@ curl -sf http://localhost:3000/health | jq .
 ### 4.3 Rollback procedure
 
 ```bash
-# 1. Identify the previous working image tag.
-docker compose logs api --tail=5  # check current tag in startup log
+# 1. Identify the previous working commit/tag.
+cd /opt/tmjconnect
+sudo -u tmjconnect git log --oneline -n 10
 
-# 2. Pin to previous image in docker-compose.yml or override:
-API_IMAGE=ghcr.io/aqion-tech/tmjconnect-api:previous-sha docker compose up -d
+# 2. Check out the previous tag and rebuild.
+sudo -u tmjconnect git checkout <previous-tag>
+sudo -u tmjconnect npm ci
+sudo -u tmjconnect npm run build --workspace=packages/shared
+sudo -u tmjconnect npm run build --workspace=apps/api
+sudo -u tmjconnect npm run build --workspace=apps/provider
+sudo -u tmjconnect npm run build --workspace=apps/admin
+sudo systemctl restart tmjconnect-api
 
 # 3. Verify health.
 curl -sf http://localhost:3000/health | jq .
@@ -271,7 +287,7 @@ curl -sf http://localhost:3000/health | jq .
 - [ ] `POST /auth/patient/login` with test credentials returns tokens
 - [ ] `GET /patients/me` with valid token returns profile
 - [ ] Sentry test event appears in dashboard (trigger via `GET /debug-sentry` in staging only)
-- [ ] Check `docker compose logs api --tail=20` for startup errors
+- [ ] Check `sudo journalctl -u tmjconnect-api -n 50 --no-pager` for startup errors
 
 ---
 
@@ -297,7 +313,7 @@ Admin users are created via direct SQL (no self-registration endpoint):
 node -e "const b=require('bcryptjs');b.hash('TempPass@1234!',12).then(h=>console.log(h))"
 
 # 2. Insert the user + profile + notification preferences.
-docker exec -i tmjconnect-postgres psql -U tmjconnect_api tmjconnect <<SQL
+psql "postgresql://tmjconnect_api:<pw>@localhost:5432/tmjconnect" <<SQL
 BEGIN;
 INSERT INTO users (id, email, password_hash, role, email_verified, is_active)
 VALUES (uuid_generate_v4(), 'admin@tmjconnect.com', '<hash-from-step-1>', 'admin', true, true);
@@ -319,11 +335,11 @@ SQL
 | `reminderJob` | `* * * * *` (every minute) | `SELECT * FROM notifications WHERE type IN ('exercise_reminder','symptom_checkin') ORDER BY created_at DESC LIMIT 5;` |
 | `codeExpiryJob` | `0 * * * *` (hourly) | `SELECT count(*) FROM linking_codes WHERE status = 'expired';` — should increase over time |
 | `weeklyDigestJob` | `0 * * * *` (hourly) | `SELECT * FROM notifications WHERE type = 'weekly_summary' ORDER BY created_at DESC LIMIT 5;` |
-| `cleanupJob` | `0 3 * * *` (daily 3 AM) | Check application logs: `docker compose logs api --since="3h" | grep cleanupJob` |
-| `orphanFileCleanupJob` | `0 4 * * *` (daily 4 AM) | Check application logs: `docker compose logs api --since="3h" | grep orphanFileCleanup` |
+| `cleanupJob` | `0 3 * * *` (daily 3 AM) | `sudo journalctl -u tmjconnect-api --since "3 hours ago" | grep cleanupJob` |
+| `orphanFileCleanupJob` | `0 4 * * *` (daily 4 AM) | `sudo journalctl -u tmjconnect-api --since "3 hours ago" | grep orphanFileCleanup` |
 
 If a job has not fired when expected, check:
-1. Is the API container running? `docker compose ps`
+1. Is the API service running? `sudo systemctl status tmjconnect-api`
 2. Is the DB reachable? `GET /health`
 3. Check for advisory lock contention: `SELECT * FROM pg_locks WHERE locktype = 'advisory';`
 

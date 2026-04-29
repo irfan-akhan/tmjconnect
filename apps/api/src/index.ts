@@ -1,6 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import path from 'node:path';
 import { createContainer } from './config/container';
 import { createRateLimiters } from './middleware/rateLimiter';
 import { createRequestLogger } from './middleware/requestLogger';
@@ -20,10 +21,10 @@ import { linkingRouter } from './routes/linking';
 import { adminRouter } from './routes/admin';
 import { trackingRouter } from './routes/tracking';
 import { intakeFormsRouter } from './routes/intake-forms';
+import { supportRouter } from './routes/support';
 import { registerJobs } from './jobs';
 import { API_PREFIX, SHUTDOWN_DRAIN_TIMEOUT_MS } from './config/constants';
 import { sql } from 'drizzle-orm';
-import path from 'path';
 import { initSentry } from './config/sentry';
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────────
@@ -85,8 +86,8 @@ async function bootstrap() {
   // ─── Attach db + logger to req for audit middleware ─────────────────────────────
   app.use(attachDb(db, logger));
 
-  // ─── Swagger UI (dev only) ───────────────────────────────────────────────────
-  if (env.NODE_ENV !== 'production') {
+  // ─── Swagger UI (gated by ENABLE_DOCS) ───────────────────────────────────────
+  if (env.ENABLE_DOCS) {
     const swaggerUi = require('swagger-ui-express');
     const YAML = require('yamljs');
     const specPath = path.resolve(__dirname, '../../../docs/openapi.yaml');
@@ -147,6 +148,21 @@ async function bootstrap() {
   app.use(`${API_PREFIX}/providers`, providersRouter(container));
   app.use(`${API_PREFIX}/uploads`, uploadsRouter(container));
 
+  // ─── Static serve of locally-stored uploads ─────────────────────────────────
+  // When STORAGE_DRIVER=local, files written under UPLOAD_DIR are served from
+  // /uploads/* (no /api/v1 prefix — the storage driver returns these URLs).
+  // In production nginx serves this dir directly with read-only access; this
+  // express handler is for local dev where nginx isn't in front of the API.
+  if (container.env.STORAGE_DRIVER === 'local') {
+    app.use(
+      '/uploads',
+      express.static(path.resolve(container.env.UPLOAD_DIR), {
+        index: false,
+        fallthrough: false,
+      }),
+    );
+  }
+
   // ─── Sprint 4 routes ───────────────────────────────────────────────────────────
   app.use(`${API_PREFIX}/reports`, reportsRouter(container));
   app.use(`${API_PREFIX}/linking`, linkingRouter(container));
@@ -159,6 +175,9 @@ async function bootstrap() {
 
   // ─── Intake forms (provider-built questionnaires) ──────────────────────────
   app.use(`${API_PREFIX}/intake-forms`, intakeFormsRouter(container));
+
+  // ─── Support tickets (provider help & support) ─────────────────────────────
+  app.use(`${API_PREFIX}/support`, supportRouter(container));
 
   // ─── 404 fallthrough ───────────────────────────────────────────────────────────
   app.use((_req, res) => {

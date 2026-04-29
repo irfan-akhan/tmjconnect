@@ -28,7 +28,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { usePatientDetail } from '@/features/patients/detail-queries';
+import { format as formatDate } from 'date-fns';
+import { usePatientDetail, useUpdatePatientLink } from '@/features/patients/detail-queries';
 import { AssignExerciseDialog } from '@/features/patients/AssignExerciseDialog';
 import { RequestReportDialog } from '@/features/patients/RequestReportDialog';
 import { FileOnBehalfDialog } from '@/features/patients/FileOnBehalfDialog';
@@ -69,7 +70,7 @@ export function PatientDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-8">
       <PatientHeader
         patient={patient.data}
         loading={patient.isLoading}
@@ -187,11 +188,8 @@ function PatientHeader({
 
   const yrs = age(patient.date_of_birth);
   const location = [patient.city, patient.state].filter(Boolean).join(', ');
-  // TODO(api): patient detail endpoint doesn't return diagnosis, linked_at, or
-  // urgency yet — these fields are placeholders or omitted until exposed.
-  const diagnosis = 'TMJ disorder';
-  // TODO(api): expose acute urgency on patient detail; treating "no flag" for now.
-  const urgency: 'urgent' | 'moderate' | 'stable' | null = null;
+  const diagnosis = patient.diagnosis;
+  const urgency = patient.urgency;
 
   return (
     <div className="rounded-sm border border-border/70 bg-card p-6 shadow-navy-xs">
@@ -215,14 +213,18 @@ function PatientHeader({
                   Urgent
                 </Badge>
               )}
+              {urgency === 'concerning' && (
+                <Badge variant="moderate" size="md">
+                  <TriangleAlert className="h-3 w-3" />
+                  Concerning
+                </Badge>
+              )}
             </div>
 
             <dl className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
               {patient.gender && <Tag>{patient.gender}</Tag>}
               {yrs != null && <Tag>{yrs} yrs</Tag>}
-              <Tag>
-                <span className="text-foreground">{diagnosis}</span>
-              </Tag>
+              <DiagnosisTag patientId={patient.id} value={diagnosis} />
               <Tag>
                 Email · <span className="text-foreground normal-case">{patient.email}</span>
               </Tag>
@@ -273,32 +275,93 @@ function PatientHeader({
       <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border/70 bg-border/70 sm:grid-cols-4">
         <Vital
           label="Exercise adherence"
-          value="—"
+          value={patient.adherence_pct == null ? '—' : `${patient.adherence_pct}%`}
           hint="Past 7 days"
           icon={<Dumbbell className="h-3.5 w-3.5" />}
         />
         <Vital
           label="Avg pain · 7d"
-          value="—"
+          value={patient.avg_pain_7d == null ? '—' : patient.avg_pain_7d.toFixed(1)}
           hint="From symptom logs"
           icon={<Activity className="h-3.5 w-3.5" />}
         />
         <Vital
           label="Linked since"
-          value="—"
+          value={patient.linked_at ? formatDate(new Date(patient.linked_at), 'd MMM yyyy') : '—'}
           hint="Time on platform"
           icon={<Calendar className="h-3.5 w-3.5" />}
         />
         <Vital
           label="Last activity"
-          value="—"
+          value={
+            patient.last_activity_at
+              ? formatDistanceToNow(new Date(patient.last_activity_at), { addSuffix: true })
+              : '—'
+          }
           hint="Symptom or report"
           icon={<MessageCircle className="h-3.5 w-3.5" />}
         />
       </div>
-      {/* TODO(api): patient detail doesn't return adherence %, avg_pain_7d, linked_at,
-          or last_activity_at — vitals are blank placeholders until those fields land. */}
     </div>
+  );
+}
+
+function DiagnosisTag({
+  patientId,
+  value,
+}: {
+  patientId: string;
+  value: string | null;
+}) {
+  const update = useUpdatePatientLink(patientId);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  if (editing) {
+    return (
+      <Tag>
+        <input
+          autoFocus
+          value={draft}
+          placeholder="Working diagnosis…"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={async () => {
+            const next = draft.trim() || null;
+            if (next !== (value ?? null)) {
+              await update.mutateAsync({ diagnosis: next });
+            }
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') {
+              setDraft(value ?? '');
+              setEditing(false);
+            }
+          }}
+          className={cn(
+            'h-6 rounded-sm border border-input bg-card px-2 font-mono text-[10px] uppercase tracking-[0.18em] text-foreground outline-none transition-colors',
+            'placeholder:text-muted-foreground/70 focus-visible:border-gold-600 focus-visible:ring-2 focus-visible:ring-ring',
+          )}
+        />
+      </Tag>
+    );
+  }
+  return (
+    <Tag>
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(value ?? '');
+          setEditing(true);
+        }}
+        className={cn(
+          'underline-offset-4 transition-colors hover:underline',
+          value ? 'text-foreground' : 'italic text-muted-foreground hover:text-foreground',
+        )}
+      >
+        {value || 'Add diagnosis'}
+      </button>
+    </Tag>
   );
 }
 
@@ -372,7 +435,7 @@ function PendingRequestsStrip({
             </div>
             <div className="flex gap-1">
               <Button size="sm" variant="outline" onClick={() => onFulfill(r.id)}>
-                <Check className="mr-1 h-3 w-3" />
+                <Check className="mr-1.5 h-3.5 w-3.5" />
                 File now
               </Button>
               <Button

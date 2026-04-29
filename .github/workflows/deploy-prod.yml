@@ -1,0 +1,90 @@
+name: Deploy to production VPS
+
+# Tag a release (e.g. `git tag v1.4.0 && git push --tags`) → prod VPS.
+# Tag-gated rather than branch-gated so prod deploys are explicit, auditable
+# events. The `production` GitHub Environment should require manual approval.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or commit to deploy (defaults to the triggering ref)"
+        required: false
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH + rebuild + restart (prod)
+    runs-on: ubuntu-latest
+    environment: production    # repo settings: require reviewers + restrict to tags
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve deploy ref
+        id: resolve
+        run: |
+          REF="${{ inputs.ref || github.ref_name }}"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Deploying ref: $REF"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Pre-deploy backup
+        env:
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" 'sudo /opt/tmjconnect/backup.sh'
+
+      - name: Deploy
+        env:
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          DEPLOY_REF: ${{ steps.resolve.outputs.ref }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "REF='$DEPLOY_REF' bash -s" <<'REMOTE'
+            set -euo pipefail
+            cd /opt/tmjconnect-prod
+            sudo -u tmjconnect-prod git fetch --tags origin
+            sudo -u tmjconnect-prod git checkout "$REF"
+            sudo -u tmjconnect-prod npm ci
+            sudo -u tmjconnect-prod npm run build --workspace=packages/shared
+            sudo -u tmjconnect-prod npm run build --workspace=apps/api
+            sudo -u tmjconnect-prod npm run build --workspace=apps/provider
+            sudo -u tmjconnect-prod npm run build --workspace=apps/admin
+            sudo -u tmjconnect-prod bash -c 'set -a; source /etc/tmjconnect/api-prod.env; set +a; \
+              npm run db:migrate --workspace=apps/api'
+            sudo systemctl restart tmjconnect-api-prod
+          REMOTE
+
+      - name: Health check
+        env:
+          HEALTH_URL: https://api.tmjconnect.com/health
+        run: |
+          for i in {1..12}; do
+            if curl -fsS "$HEALTH_URL" | tee /tmp/health.json | grep -q '"status":"healthy"'; then
+              echo "Prod deploy healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed after 60s. Last response:"
+          cat /tmp/health.json || true
+          exit 1

@@ -4,24 +4,32 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import {
   ArrowRight,
+  CalendarPlus,
   Check,
   CheckCheck,
   ChevronLeft,
   ChevronRight,
   Filter,
   Flag,
-  Image as ImageIcon,
   Inbox,
   Mail,
-  Paperclip,
-  Send,
   TriangleAlert,
 } from 'lucide-react';
-import { Avatar, AvatarFallback, initials } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage, initials } from '@/components/ui/avatar';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FilterPill } from '@/components/ui/filter-pill';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
 import {
   Select,
@@ -37,14 +45,21 @@ import { cn } from '@/lib/utils';
 import {
   useFlagReport,
   useInbox,
+  useMarkAllInboxViewed,
   useMarkReviewed,
   useReport,
   useRespondToReport,
+  type InboxFilters,
   type InboxRow,
   type ReportResponse,
   type ReportStatus,
   type ReportUrgency,
 } from '@/features/reports/queries';
+import {
+  useLastClinicVisit,
+  usePatientAnalytics,
+  useRecordClinicVisit,
+} from '@/features/patients/detail-queries';
 
 const PAGE_SIZE = 25;
 
@@ -91,14 +106,19 @@ function painTone(value: number | null) {
   return 'text-ok-dark';
 }
 
+type ServerFilters = Pick<InboxFilters, 'patient_id' | 'from' | 'to' | 'urgency' | 'status'>;
+
 export function ReportsInboxPage() {
   const navigate = useNavigate();
   const { reportId: paramId } = useParams();
   const [bucket, setBucket] = useState<Bucket>('all');
   const [sort, setSort] = useState<Sort>('urgency');
   const [page, setPage] = useState(1);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [serverFilters, setServerFilters] = useState<ServerFilters>({});
+  const markAll = useMarkAllInboxViewed();
 
-  const inbox = useInbox({ page, limit: PAGE_SIZE });
+  const inbox = useInbox({ page, limit: PAGE_SIZE, ...serverFilters });
   const allRows: InboxRow[] = inbox.data?.data ?? [];
   const total = inbox.data?.meta?.total ?? 0;
   const totalPages = inbox.data?.meta?.totalPages ?? 1;
@@ -140,33 +160,69 @@ export function ReportsInboxPage() {
 
   const selectedId = paramId ?? filteredRows[0]?.id;
 
-  // TODO(api): inbox endpoint doesn't return avg-response-time; placeholder.
-  const avgResponse = '—';
-
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6">
+    <div className="mx-auto max-w-[1400px] space-y-8">
       <PageHeader
         eyebrow="Reports inbox"
         title="Reports from your patients."
         description={
           <>
             <span className="text-foreground">{counts.awaiting}</span> awaiting response ·{' '}
-            <span className="text-err-dark">{counts.urgent} urgent</span> · Avg response{' '}
-            <span className="text-foreground">{avgResponse}</span>
+            <span className="text-err-dark">{counts.urgent} urgent</span>
+            {hasActiveServerFilters(serverFilters) && (
+              <>
+                {' '}
+                · <span className="text-foreground">filtered</span>
+              </>
+            )}
           </>
         }
         actions={
           <>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={markAll.isPending || counts.awaiting === 0}
+              onClick={() =>
+                markAll.mutate(undefined, {
+                  onSuccess: (res) => {
+                    const n = res?.data?.updated ?? 0;
+                    toast.success(
+                      n === 0
+                        ? 'Inbox already up to date.'
+                        : `Marked ${n} report${n === 1 ? '' : 's'} as read.`,
+                    );
+                  },
+                  onError: (err) =>
+                    toast.error(err instanceof Error ? err.message : 'Failed to mark read.'),
+                })
+              }
+            >
               <CheckCheck className="mr-2 h-3.5 w-3.5" />
-              Mark all read
+              {markAll.isPending ? 'Marking…' : 'Mark all read'}
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => setFiltersOpen(true)}>
               <Filter className="mr-2 h-3.5 w-3.5" />
               Filters
+              {hasActiveServerFilters(serverFilters) && (
+                <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gold-600 font-mono text-[9px] text-navy-900">
+                  {countActiveServerFilters(serverFilters)}
+                </span>
+              )}
             </Button>
           </>
         }
+      />
+
+      <FiltersDialog
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        value={serverFilters}
+        onApply={(next) => {
+          setServerFilters(next);
+          setPage(1); // server-side filter change → reset paging
+          setFiltersOpen(false);
+        }}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -380,7 +436,6 @@ function ListItem({
 
           <div className="mt-2 flex items-center justify-between">
             <Badge variant={statusBadgeVariant(row.status)}>{statusLabel(row.status)}</Badge>
-            {/* TODO(api): attachments count not in inbox row; omitted. */}
           </div>
         </div>
       </div>
@@ -396,6 +451,7 @@ function ReportDetail({ reportId }: { reportId: string }) {
 
   const [message, setMessage] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
+  const [recordVisitOpen, setRecordVisitOpen] = useState(false);
 
   // Reset draft when switching reports.
   useEffect(() => {
@@ -449,21 +505,25 @@ function ReportDetail({ reportId }: { reportId: string }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-1 items-start gap-4">
             <Avatar size="md">
+              {report.patient_avatar_url && <AvatarImage src={report.patient_avatar_url} alt="" />}
               <AvatarFallback className="bg-navy-600 text-background">
-                {initials(report.patient_id.slice(0, 1), report.patient_id.slice(1, 2))}
+                {initials(report.patient_first_name, report.patient_last_name)}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
               <h2 className="font-serif text-2xl tracking-tightest">
-                Report from this patient
+                {report.patient_first_name} {report.patient_last_name}
               </h2>
               <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                Patient ID · {report.patient_id.slice(0, 8)}…
+                Report · {format(new Date(report.submitted_at), 'd MMM yyyy')}
               </div>
-              {/* TODO(api): inbox/report doesn't return patient name on detail; consider joining. */}
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setRecordVisitOpen(true)}>
+              <CalendarPlus className="mr-1.5 h-3.5 w-3.5" />
+              Log visit
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -582,25 +642,8 @@ function ReportDetail({ reportId }: { reportId: string }) {
         </section>
       )}
 
-      {/* Clinical context (sparkline / adherence / last visit) */}
-      <section className="grid grid-cols-3 gap-px border-b border-border/70 bg-border/70">
-        <ContextCard
-          label="14-day pain trend"
-          // TODO(api): trend requires daily symptom data; renders empty state for now.
-          value={<Sparkline data={[]} height={28} />}
-          hint="Climbing steadily"
-        />
-        <ContextCard
-          label="Adherence · 7d"
-          value={<span className="font-serif text-2xl tracking-tightest text-warn-dark">—</span>}
-          hint="Below target (80%)"
-        />
-        <ContextCard
-          label="Last clinic visit"
-          value={<span className="font-serif text-2xl tracking-tightest text-foreground">—</span>}
-          hint="Days ago"
-        />
-      </section>
+      {/* Clinical context (real backend) */}
+      <ContextSection patientId={report.patient_id} />
 
       {/* Conversation history */}
       {responses.length > 0 && (
@@ -653,29 +696,290 @@ function ReportDetail({ reportId }: { reportId: string }) {
           )}
         </div>
         <div className="flex items-center justify-between border-t border-border/60 bg-secondary/30 px-4 py-3">
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <button type="button" className="rounded-sm p-1 hover:bg-secondary" aria-label="Attach file">
-              <Paperclip className="h-3.5 w-3.5" />
-            </button>
-            <button type="button" className="rounded-sm p-1 hover:bg-secondary" aria-label="Attach image">
-              <ImageIcon className="h-3.5 w-3.5" />
-            </button>
-            <span className="ml-3 font-mono text-[10px] uppercase tracking-[0.18em]">
-              {message.length}/5000
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm">
-              Save draft
-            </Button>
-            <Button type="submit" size="sm" disabled={respond.isPending || !message.trim()}>
-              {respond.isPending ? 'Sending…' : 'Send response'}
-              <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-            </Button>
-          </div>
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            {message.length}/5000
+          </span>
+          <Button type="submit" size="sm" disabled={respond.isPending || !message.trim()}>
+            {respond.isPending ? 'Sending…' : 'Send response'}
+            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
         </div>
       </form>
+
+      <RecordVisitDialog
+        open={recordVisitOpen}
+        patientId={report.patient_id}
+        patientName={`${report.patient_first_name} ${report.patient_last_name}`}
+        onClose={() => setRecordVisitOpen(false)}
+      />
     </article>
+  );
+}
+
+function ResponseItem({ r }: { r: ReportResponse }) {
+  return (
+    <li className="rounded-sm border border-border/70 bg-card p-4">
+      <div className="mb-2 flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+        <span className="text-foreground">You responded</span>
+        <span>{format(new Date(r.responded_at), 'd MMM yyyy · HH:mm')}</span>
+      </div>
+      <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.message}</p>
+      {r.internal_notes && (
+        <div className="mt-3 rounded-sm border-l-2 border-gold-600 bg-gold-100/30 p-3">
+          <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            Internal notes · private
+          </div>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.internal_notes}</p>
+        </div>
+      )}
+    </li>
+  );
+}
+
+// ─── Server-side filter helpers ──────────────────────────────────────────────
+
+function hasActiveServerFilters(f: ServerFilters): boolean {
+  return Boolean(f.urgency || f.status || f.patient_id || f.from || f.to);
+}
+
+function countActiveServerFilters(f: ServerFilters): number {
+  return (
+    (f.urgency ? 1 : 0) +
+    (f.status ? 1 : 0) +
+    (f.patient_id ? 1 : 0) +
+    (f.from ? 1 : 0) +
+    (f.to ? 1 : 0)
+  );
+}
+
+// ─── Filters dialog (server-side filters: urgency, status, date range, patient) ──
+
+function FiltersDialog({
+  open,
+  onClose,
+  value,
+  onApply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  value: ServerFilters;
+  onApply: (next: ServerFilters) => void;
+}) {
+  // Local draft so changes don't leak to URL/network until "Apply" is clicked.
+  const [draft, setDraft] = useState<ServerFilters>(value);
+
+  // Sync draft when dialog re-opens with a different applied value.
+  useEffect(() => {
+    if (open) setDraft(value);
+  }, [open, value]);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-serif text-xl tracking-tightest">Filter inbox</DialogTitle>
+          <DialogDescription>
+            Narrow the inbox to a date range, urgency level, status, or a specific patient.
+            Bucket pills above this still apply on top of the filtered set.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="filt-from" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                From
+              </Label>
+              <Input
+                id="filt-from"
+                type="date"
+                value={draft.from?.slice(0, 10) ?? ''}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    from: e.target.value ? new Date(`${e.target.value}T00:00:00Z`).toISOString() : undefined,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="filt-to" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                To
+              </Label>
+              <Input
+                id="filt-to"
+                type="date"
+                value={draft.to?.slice(0, 10) ?? ''}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    to: e.target.value ? new Date(`${e.target.value}T23:59:59Z`).toISOString() : undefined,
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Urgency
+            </Label>
+            <Select
+              value={draft.urgency ?? '__any'}
+              onValueChange={(v) =>
+                setDraft((d) => ({ ...d, urgency: v === '__any' ? undefined : (v as ReportUrgency) }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__any">Any urgency</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+                <SelectItem value="concerning">Concerning</SelectItem>
+                <SelectItem value="routine">Routine</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Status
+            </Label>
+            <Select
+              value={draft.status ?? '__any'}
+              onValueChange={(v) =>
+                setDraft((d) => ({ ...d, status: v === '__any' ? undefined : (v as ReportStatus) }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__any">Any status</SelectItem>
+                <SelectItem value="submitted">Unanswered</SelectItem>
+                <SelectItem value="viewed">Opened</SelectItem>
+                <SelectItem value="reviewed">Reviewed</SelectItem>
+                <SelectItem value="responded">Responded</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="filt-patient" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Patient ID
+            </Label>
+            <Input
+              id="filt-patient"
+              placeholder="Paste a patient UUID to scope to one patient"
+              value={draft.patient_id ?? ''}
+              onChange={(e) => setDraft((d) => ({ ...d, patient_id: e.target.value || undefined }))}
+            />
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              Tip — open the patient from the list to copy their ID; a search picker will land later.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setDraft({})}>
+            Clear all
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => onApply(draft)}>Apply</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Clinical context cards (real backend) ───────────────────────────────────
+
+function ContextSection({ patientId }: { patientId: string }) {
+  const analytics = usePatientAnalytics(patientId, 14);
+  const lastVisit = useLastClinicVisit(patientId);
+
+  const trend = analytics.data?.pain_trend ?? [];
+  const trendValues = trend.map((p) => p.pain_level);
+  const trendDirection = trendDirectionOf(trendValues);
+  const compliance = analytics.data?.exercise_compliance;
+  const visitedAt = lastVisit.data?.visited_at;
+
+  return (
+    <section className="grid grid-cols-3 gap-px border-b border-border/70 bg-border/70">
+      <ContextCard
+        label="14-day pain trend"
+        value={
+          analytics.isLoading ? (
+            <Skeleton className="h-7 w-24" />
+          ) : trendValues.length === 0 ? (
+            <span className="font-serif text-2xl tracking-tightest text-muted-foreground">—</span>
+          ) : (
+            <Sparkline data={trendValues} height={28} />
+          )
+        }
+        hint={
+          analytics.isLoading
+            ? 'Loading…'
+            : trendValues.length === 0
+              ? 'No symptom logs in window'
+              : trendDirection
+        }
+      />
+      <ContextCard
+        label="Adherence · 7d"
+        value={
+          analytics.isLoading ? (
+            <Skeleton className="h-7 w-16" />
+          ) : compliance == null || compliance.assigned === 0 ? (
+            <span className="font-serif text-2xl tracking-tightest text-muted-foreground">—</span>
+          ) : (
+            <span
+              className={cn(
+                'font-serif text-2xl tracking-tightest',
+                compliance.rate >= 80
+                  ? 'text-ok-dark'
+                  : compliance.rate >= 50
+                    ? 'text-warn-dark'
+                    : 'text-err-dark',
+              )}
+            >
+              {Math.round(compliance.rate)}%
+            </span>
+          )
+        }
+        hint={
+          analytics.isLoading
+            ? 'Loading…'
+            : compliance == null || compliance.assigned === 0
+              ? 'No active assignments'
+              : `${compliance.completed}/${compliance.assigned} expected`
+        }
+      />
+      <ContextCard
+        label="Last clinic visit"
+        value={
+          lastVisit.isLoading ? (
+            <Skeleton className="h-7 w-24" />
+          ) : !visitedAt ? (
+            <span className="font-serif text-2xl tracking-tightest text-muted-foreground">—</span>
+          ) : (
+            <span className="font-serif text-2xl tracking-tightest text-foreground">
+              {formatDistanceToNow(new Date(visitedAt), { addSuffix: false })}
+            </span>
+          )
+        }
+        hint={
+          lastVisit.isLoading
+            ? 'Loading…'
+            : !visitedAt
+              ? 'Use "Log visit" above to record one'
+              : `${format(new Date(visitedAt), 'd MMM yyyy')} ago`
+        }
+      />
+    </section>
   );
 }
 
@@ -701,28 +1005,130 @@ function ContextCard({
   );
 }
 
-function ResponseItem({ r }: { r: ReportResponse }) {
+/**
+ * Cheap trend descriptor — compares the average of the first half of the
+ * window vs the second half. Avoids over-reading noise from a single high day.
+ */
+function trendDirectionOf(values: number[]): string {
+  if (values.length < 4) return 'Insufficient data';
+  const mid = Math.floor(values.length / 2);
+  const head = values.slice(0, mid);
+  const tail = values.slice(mid);
+  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const delta = avg(tail) - avg(head);
+  if (delta > 0.5) return 'Climbing';
+  if (delta < -0.5) return 'Improving';
+  return 'Stable';
+}
+
+// ─── Record clinic visit dialog ──────────────────────────────────────────────
+
+function RecordVisitDialog({
+  open,
+  patientId,
+  patientName,
+  onClose,
+}: {
+  open: boolean;
+  patientId: string;
+  patientName: string;
+  onClose: () => void;
+}) {
+  const record = useRecordClinicVisit(patientId);
+  const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [time, setTime] = useState<string>(() => new Date().toTimeString().slice(0, 5));
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      const now = new Date();
+      setDate(now.toISOString().slice(0, 10));
+      setTime(now.toTimeString().slice(0, 5));
+      setNotes('');
+    }
+  }, [open]);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      await record.mutateAsync({
+        visited_at: new Date(`${date}T${time}:00`).toISOString(),
+        notes: notes.trim() || null,
+      });
+      toast.success('Clinic visit recorded.');
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to record visit.');
+    }
+  }
+
   return (
-    <li className="rounded-sm border border-border/70 bg-card p-4">
-      <div className="mb-2 flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-        <span className="text-foreground">You responded</span>
-        <span>{format(new Date(r.responded_at), 'd MMM yyyy · HH:mm')}</span>
-      </div>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.message}</p>
-      {r.internal_notes && (
-        <div className="mt-3 rounded-sm border-l-2 border-gold-600 bg-gold-100/30 p-3">
-          <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-            Internal notes · private
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-serif text-xl tracking-tightest">
+            Log clinic visit
+          </DialogTitle>
+          <DialogDescription>
+            Record an in-clinic encounter with {patientName}. Visible to providers only — never to
+            the patient.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="visit-date" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                Date
+              </Label>
+              <Input
+                id="visit-date"
+                type="date"
+                value={date}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="visit-time" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                Time
+              </Label>
+              <Input
+                id="visit-time"
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                required
+              />
+            </div>
           </div>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.internal_notes}</p>
-        </div>
-      )}
-    </li>
+
+          <div className="space-y-2">
+            <Label htmlFor="visit-notes" className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Notes (optional)
+            </Label>
+            <Textarea
+              id="visit-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="What was discussed, exam findings, follow-up plan…"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={record.isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={record.isPending}>
+              {record.isPending ? 'Saving…' : 'Record visit'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// re-export so the existing /reports/:reportId route works through the same split UI.
-export { ReportsInboxPage as ReportsInboxRoute };
-
-// Send action icon — kept for future toolbar growth.
-export const _Send = Send;

@@ -320,7 +320,7 @@ CREATE INDEX idx_ea_patient_id ON exercise_assignments(patient_id)
 CREATE INDEX idx_ea_provider_id ON exercise_assignments(provider_id);
 
 -- exercise_completions
-CREATE UNIQUE INDEX idx_ec_daily_unique ON exercise_completions(assignment_id, patient_id, (completed_at::date));
+CREATE UNIQUE INDEX idx_ec_daily_unique ON exercise_completions(assignment_id, patient_id, ((completed_at AT TIME ZONE 'UTC')::date));
 CREATE INDEX idx_ec_patient_logged ON exercise_completions(patient_id, completed_at);
 
 -- symptom_logs

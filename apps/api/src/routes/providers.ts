@@ -18,6 +18,8 @@ import {
   noteListQuerySchema,
   createReportRequestSchema,
   providerCreateReportSchema,
+  recordClinicVisitSchema,
+  updatePatientLinkSchema,
 } from '@tmjconnect/shared';
 import { parseCursorPagination, buildCursorMeta } from '../utils/pagination';
 import * as GetProfile from '../use-cases/providers/get-profile';
@@ -45,7 +47,11 @@ import * as ListRequests from '../use-cases/reports/list-requests';
 import * as ProviderCreateReport from '../use-cases/reports/provider-create-report';
 import * as DashboardSummary from '../use-cases/providers/dashboard-summary';
 import * as GetAnalytics from '../use-cases/providers/get-analytics';
+import * as GetLastClinicVisit from '../use-cases/providers/get-last-clinic-visit';
+import * as RecordClinicVisit from '../use-cases/providers/record-clinic-visit';
 import * as ListActivity from '../use-cases/providers/list-activity';
+import * as GetBilling from '../use-cases/providers/get-billing';
+import * as UpdatePatientLink from '../use-cases/providers/update-patient-link';
 import { getPatientAnalytics } from '../db/queries/patient-analytics.queries';
 
 export function providersRouter(container: Container) {
@@ -109,6 +115,30 @@ export function providersRouter(container: Container) {
     },
   );
 
+  // ─── Per-link metadata (provider's working diagnosis) ────────────────────
+  router.patch(
+    '/patients/:patientId/link',
+    validate(updatePatientLinkSchema),
+    auditLog('provider_updated_patient_link', 'patient_provider_link'),
+    async (req, res, next) => {
+      try {
+        const data = await UpdatePatientLink.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+          fields: req.body,
+        });
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── Billing / plan (pilot tier today, derived response) ──────────────────
+  router.get('/me/billing', auditLog('provider_billing_viewed', 'user'), async (req, res, next) => {
+    try {
+      res.json({ data: await GetBilling.execute(container, { userId: req.user!.id }) });
+    } catch (err) { next(err); }
+  });
+
   // ─── Patient clinical history (read-only, link-scoped) ──────────────────────
   router.get(
     '/patients/:patientId/symptoms',
@@ -138,6 +168,39 @@ export function providersRouter(container: Container) {
         const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 7), 365);
         const data = await getPatientAnalytics(container.db, req.user!.id, req.params.patientId, days);
         res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  // ─── Clinic visits (provider-recorded) ────────────────────────────────────────
+  router.get(
+    '/patients/:patientId/clinic-visits/last',
+    auditLog('provider_viewed_last_clinic_visit', 'clinic_visit'),
+    async (req, res, next) => {
+      try {
+        const data = await GetLastClinicVisit.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+        });
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.post(
+    '/patients/:patientId/clinic-visits',
+    validate(recordClinicVisitSchema),
+    auditLog('provider_recorded_clinic_visit', 'clinic_visit'),
+    async (req, res, next) => {
+      try {
+        const data = await RecordClinicVisit.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+          visited_at: req.body.visited_at,
+          notes: req.body.notes ?? null,
+        });
+        res.locals.auditResourceId = data.id;
+        res.status(201).json({ data });
       } catch (err) { next(err); }
     },
   );

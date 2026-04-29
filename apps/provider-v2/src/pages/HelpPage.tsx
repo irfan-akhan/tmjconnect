@@ -27,6 +27,10 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth/AuthProvider';
+import {
+  useCreateSupportTicket,
+  type SupportTicketCategory,
+} from '@/features/support/queries';
 
 type Faq = { q: string; a: string; cta?: string };
 
@@ -85,7 +89,7 @@ export function HelpPage() {
       {/* ─── Hero ────────────────────────────────────────────────────── */}
       <section className="grain relative overflow-hidden rounded-sm bg-gradient-to-br from-navy-700 to-navy-900 p-8 text-background sm:p-12">
         <div className="relative z-10 mx-auto max-w-3xl">
-          <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-gold-400/80">
+          <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-gold-300">
             Help center
           </div>
           <h1 className="font-serif text-3xl leading-tight tracking-tightest sm:text-4xl">
@@ -113,14 +117,14 @@ export function HelpPage() {
             </Button>
           </form>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-gold-400/80">
+          <div className="mt-4 flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-gold-300">
             <span>Popular ·</span>
             {['Invite a patient', 'Reset MFA', 'Billing & BAA'].map((tag) => (
               <button
                 key={tag}
                 type="button"
                 onClick={() => setSearch(tag)}
-                className="hover:text-gold-300"
+                className="hover:text-gold-200"
               >
                 {tag}
               </button>
@@ -277,19 +281,29 @@ function ActionTile({
 }
 
 function ContactForm() {
-  const [category, setCategory] = useState('technical');
+  const [category, setCategory] = useState<SupportTicketCategory>('technical');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [attachLog, setAttachLog] = useState(false);
   const [sent, setSent] = useState(false);
+  const create = useCreateSupportTicket();
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // TODO(api): no /support/tickets endpoint yet — front-end stub only.
-    setSent(true);
-    setTimeout(() => setSent(false), 3000);
-    setSubject('');
-    setBody('');
+    try {
+      await create.mutateAsync({
+        category,
+        subject,
+        body,
+        attach_diagnostic: attachLog,
+      });
+      setSent(true);
+      setSubject('');
+      setBody('');
+      setTimeout(() => setSent(false), 4000);
+    } catch {
+      // Toast handled by the mutation onError.
+    }
   }
 
   return (
@@ -306,7 +320,7 @@ function ContactForm() {
           <Label className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
             Category
           </Label>
-          <Select value={category} onValueChange={setCategory}>
+          <Select value={category} onValueChange={(v) => setCategory(v as SupportTicketCategory)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -356,9 +370,13 @@ function ContactForm() {
             Ticket submitted. We'll reply within 4 business hours.
           </div>
         )}
-        <Button type="submit" className="w-full" disabled={!subject || !body}>
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={!subject || body.length < 10 || create.isPending}
+        >
           <Send className="mr-2 h-3.5 w-3.5" />
-          Submit ticket
+          {create.isPending ? 'Submitting…' : 'Submit ticket'}
         </Button>
       </form>
     </div>

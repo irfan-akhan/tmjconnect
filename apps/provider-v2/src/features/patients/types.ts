@@ -7,6 +7,7 @@ export type PatientRow = {
   last_symptom_at: string | null;
   avg_pain_7d: number | null;
   exercises_completed_7d: number;
+  daily_pain_14d: Array<{ date: string; pain_level: number }>;
 };
 
 export type PatientsResponse = {

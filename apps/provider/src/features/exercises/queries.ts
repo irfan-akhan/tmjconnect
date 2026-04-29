@@ -75,17 +75,9 @@ export function useDeleteExercise() {
 export async function uploadVideo(file: File): Promise<{ key: string; url: string }> {
   const form = new FormData();
   form.append('file', file);
-  // apiFetch forces JSON content-type; hit fetch directly for multipart.
-  const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
-  const res = await fetch(`${BASE_URL}/uploads/video`, {
+  const payload = await apiFetch<{ data: { key: string; url: string } }>('/uploads/video', {
     method: 'POST',
-    credentials: 'include',
     body: form,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message ?? `Upload failed (${res.status})`);
-  }
-  const payload = await res.json();
   return payload.data;
 }

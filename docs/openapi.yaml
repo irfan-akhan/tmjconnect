@@ -36,8 +36,12 @@ tags:
     description: Jaw mobility, medication, and sleep quality tracking
   - name: Insights
     description: Pain trend analytics, exercise/medication/sleep correlations
+  - name: Intake Forms
+    description: Provider-built questionnaires assigned to patients
+  - name: Clinic Visits
+    description: Provider-recorded in-clinic encounters
   - name: Admin
-    description: User management, audit logs, system metrics
+    description: User management, audit logs, broadcasts, feature flags, scheduled reports, jobs, system metrics
 
 components:
   securitySchemes:
@@ -855,6 +859,630 @@ components:
         ip_address: { type: [string, "null"] }
         user_agent: { type: [string, "null"] }
         created_at: { type: string, format: date-time }
+
+    # ─── Auth (additions: ToS, email change) ───────────────────────────────────
+    TosCurrent:
+      description: Current Terms of Service version + the user's acceptance state
+      type: object
+      required: [current_version, published_at, accepted]
+      properties:
+        current_version: { type: string, example: "2026-01" }
+        published_at: { type: string, format: date-time }
+        accepted: { type: boolean }
+        accepted_version: { type: [string, "null"] }
+        accepted_at: { type: [string, "null"], format: date-time }
+
+    EmailChangeRequestResult:
+      description: Acknowledgement that a verification code was emailed to the new address
+      type: object
+      required: [ok, expires_at]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        expires_at: { type: string, format: date-time, description: "When the verification code stops being valid" }
+
+    # ─── Clinic Visits ─────────────────────────────────────────────────────────
+    ClinicVisit:
+      description: Provider-recorded in-clinic encounter with a linked patient
+      type: object
+      required: [id, patient_id, visited_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        provider_id: { type: [string, "null"], format: uuid, description: "null if the recording provider was later deleted" }
+        visited_at: { type: string, format: date-time }
+        notes: { type: [string, "null"], maxLength: 2000 }
+        created_at: { type: string, format: date-time }
+
+    # ─── Intake Forms ──────────────────────────────────────────────────────────
+    IntakeFieldDef:
+      description: Definition of a single field in an intake form
+      type: object
+      required: [type, label, required, order]
+      properties:
+        type: { type: string, enum: [scale, checkbox, text, select, number] }
+        label: { type: string }
+        options: { type: array, items: { type: string }, description: "Required for select / checkbox" }
+        required: { type: boolean }
+        order: { type: integer, description: "Display order — lower first" }
+        min: { type: integer, description: "For scale / number fields" }
+        max: { type: integer, description: "For scale / number fields" }
+        placeholder: { type: string }
+
+    IntakeForm:
+      description: A provider-built questionnaire template
+      type: object
+      required: [id, provider_id, title, fields, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        provider_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: [string, "null"] }
+        fields:
+          type: array
+          items: { $ref: '#/components/schemas/IntakeFieldDef' }
+        status: { type: string, enum: [draft, published, archived] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    IntakeFormAssignment:
+      description: An instance of an intake form assigned to a specific patient
+      type: object
+      required: [id, form_id, patient_id, provider_id, status, assigned_at]
+      properties:
+        id: { type: string, format: uuid }
+        form_id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        provider_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, completed] }
+        assigned_at: { type: string, format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+
+    IntakeAssignmentForPatient:
+      description: Pending intake assignment as the patient sees it (form fields embedded)
+      type: object
+      required: [id, form_id, status, assigned_at, form_title, form_fields]
+      properties:
+        id: { type: string, format: uuid }
+        form_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, completed] }
+        assigned_at: { type: string, format: date-time }
+        form_title: { type: string }
+        form_description: { type: [string, "null"] }
+        form_fields:
+          type: array
+          items: { $ref: '#/components/schemas/IntakeFieldDef' }
+        provider_name: { type: string }
+
+    IntakeResponse:
+      description: A patient's submission to an intake form
+      type: object
+      required: [id, assignment_id, form_id, patient_id, answers, submitted_at]
+      properties:
+        id: { type: string, format: uuid }
+        assignment_id: { type: string, format: uuid }
+        form_id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        answers:
+          type: array
+          description: "Array of answer objects shaped by the field's type"
+          items: { type: object, additionalProperties: true }
+        submitted_at: { type: string, format: date-time }
+
+    IntakeResponseRow:
+      description: Per-response row used by the provider's responses-list view (joined with patient name)
+      type: object
+      required: [id, patient_id, answers, submitted_at, patient_name]
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        answers:
+          type: array
+          items: { type: object, additionalProperties: true }
+        submitted_at: { type: string, format: date-time }
+        patient_name: { type: string }
+
+    # ─── Analytics ─────────────────────────────────────────────────────────────
+    PatientAnalytics:
+      description: Per-patient analytics aggregations over a configurable window
+      type: object
+      required: [pain_trend, pain_summary, trigger_frequency, exercise_compliance, body_area_frequency, day_of_week]
+      properties:
+        pain_trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              pain_level: { type: number }
+        pain_summary:
+          type: object
+          properties:
+            avg_pain: { type: number }
+            min_pain: { type: number }
+            max_pain: { type: number }
+            total_logs: { type: integer }
+        trigger_frequency:
+          type: array
+          items:
+            type: object
+            properties:
+              trigger: { type: string }
+              count: { type: integer }
+        exercise_compliance:
+          type: object
+          properties:
+            completed: { type: integer }
+            assigned: { type: integer }
+            rate: { type: number, description: "Percent (0–100)" }
+        body_area_frequency:
+          type: array
+          items:
+            type: object
+            properties:
+              area: { type: string }
+              count: { type: integer }
+        day_of_week:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string, description: "Day name e.g. Monday" }
+              avg_pain: { type: number }
+
+    ProviderAnalytics:
+      description: Provider-wide analytics across all linked patients
+      type: object
+      required: [overview, pain_trend, trigger_distribution, patient_engagement, pain_distribution, exercise_impact, day_of_week_pattern]
+      properties:
+        overview:
+          type: object
+          properties:
+            total_patients: { type: integer }
+            active_patients_7d: { type: integer }
+            avg_pain_level: { type: number }
+            avg_pain_trend: { type: number, description: "Delta vs prior period" }
+            total_logs_30d: { type: integer }
+            exercise_compliance_pct: { type: number }
+        pain_trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              avg_pain: { type: number }
+              log_count: { type: integer }
+        trigger_distribution:
+          type: array
+          items:
+            type: object
+            properties:
+              trigger: { type: string }
+              count: { type: integer }
+              pct: { type: number }
+        patient_engagement:
+          type: array
+          items:
+            type: object
+            properties:
+              patient_id: { type: string, format: uuid }
+              first_name: { type: string }
+              last_name: { type: string }
+              logs_30d: { type: integer }
+              avg_pain: { type: number }
+              pain_delta: { type: number }
+              last_log_at: { type: [string, "null"], format: date-time }
+              exercises_completed_30d: { type: integer }
+        pain_distribution:
+          type: array
+          items:
+            type: object
+            properties:
+              level: { type: integer }
+              count: { type: integer }
+        exercise_impact:
+          type: object
+          properties:
+            with_exercise_avg_pain: { type: number }
+            without_exercise_avg_pain: { type: number }
+            with_exercise_days: { type: integer }
+            without_exercise_days: { type: integer }
+        day_of_week_pattern:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string }
+              avg_pain: { type: number }
+              log_count: { type: integer }
+
+    PlatformAnalytics:
+      description: Cross-platform analytics for the admin overview
+      type: object
+      properties:
+        user_growth:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              patients: { type: integer }
+              providers: { type: integer }
+        pain_overview:
+          type: object
+          properties:
+            avg_pain: { type: number }
+            total_logs: { type: integer }
+            active_loggers: { type: integer }
+        pain_trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              avg_pain: { type: number }
+              log_count: { type: integer }
+        pain_distribution:
+          type: array
+          items:
+            type: object
+            properties:
+              level: { type: integer }
+              count: { type: integer }
+        top_triggers:
+          type: array
+          items:
+            type: object
+            properties:
+              trigger: { type: string }
+              count: { type: integer }
+              pct: { type: number }
+        report_volume:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              total: { type: integer }
+              urgent: { type: integer }
+              concerning: { type: integer }
+              routine: { type: integer }
+        response_times:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              avg_hours: { type: number }
+        exercise_stats:
+          type: object
+          properties:
+            total_exercises: { type: integer }
+            total_assignments: { type: integer }
+            completion_rate: { type: number }
+        engagement_funnel:
+          type: object
+          properties:
+            total_users: { type: integer }
+            verified: { type: integer }
+            with_profile: { type: integer }
+            active_7d: { type: integer }
+            active_30d: { type: integer }
+        provider_workload:
+          type: array
+          items:
+            type: object
+            properties:
+              provider_id: { type: string, format: uuid }
+              name: { type: string }
+              patient_count: { type: integer }
+              reports_30d: { type: integer }
+              avg_response_hours: { type: [number, "null"] }
+
+    # ─── Admin entities ────────────────────────────────────────────────────────
+    OutboxItem:
+      description: One queued notification awaiting delivery (or in DLQ)
+      type: object
+      required: [id, user_id, channel, template, attempts, max_attempts, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        channel: { type: string, enum: [email, sms, push] }
+        template: { type: string }
+        context: { type: object, additionalProperties: true }
+        attempts: { type: integer }
+        max_attempts: { type: integer }
+        sent_at: { type: [string, "null"], format: date-time }
+        failed_reason: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
+    JobSummary:
+      description: Most recent run + recent success rate for a scheduled job
+      type: object
+      properties:
+        name: { type: string, example: reminderJob }
+        last_run_at: { type: [string, "null"], format: date-time }
+        last_status: { type: [string, "null"], enum: [started, success, failed, null] }
+        success_rate_24h: { type: number, description: "Percent (0–100) of runs succeeded in last 24h" }
+
+    JobRun:
+      description: A single recorded execution of a scheduled job
+      type: object
+      required: [id, job_name, status, started_at]
+      properties:
+        id: { type: string, format: uuid }
+        job_name: { type: string }
+        status: { type: string, enum: [started, success, failed] }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: [string, "null"], format: date-time }
+        error_message: { type: [string, "null"] }
+
+    Broadcast:
+      description: Admin-sent notification fan-out to a defined audience
+      type: object
+      required: [id, audience, type, title, body, channels, recipient_count, created_at, created_by_email]
+      properties:
+        id: { type: string, format: uuid }
+        audience: { type: string, description: "e.g. all_patients, all_providers, role:admin" }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        channels:
+          type: array
+          items: { type: string, enum: [email, sms, push, in_app] }
+        recipient_count: { type: integer }
+        scheduled_at: { type: [string, "null"], format: date-time }
+        sent_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        created_by_email: { type: string, format: email }
+
+    FeatureFlag:
+      description: Server-side feature flag controlled by admins
+      type: object
+      required: [key, enabled, description, rollout_percent, target_roles, updated_by, updated_at, created_at]
+      properties:
+        key: { type: string }
+        enabled: { type: boolean }
+        description: { type: string }
+        rollout_percent: { type: integer, minimum: 0, maximum: 100 }
+        target_roles:
+          type: array
+          items: { type: string, enum: [patient, provider, admin] }
+        updated_by: { type: string, format: uuid }
+        updated_by_email: { type: string, format: email }
+        updated_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    ScheduledReport:
+      description: A periodic CSV/email report generated for admins
+      type: object
+      required: [id, name, entity, filters, cadence, recipient_emails, next_run_at, enabled, created_at, created_by_email]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        entity: { type: string, description: "e.g. audit_logs, login_events, reports" }
+        filters:
+          type: object
+          additionalProperties: true
+        cadence: { type: string, enum: [daily, weekly, monthly] }
+        recipient_emails:
+          type: array
+          items: { type: string, format: email }
+        next_run_at: { type: string, format: date-time }
+        last_run_at: { type: [string, "null"], format: date-time }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        created_by_email: { type: string, format: email }
+
+    LinkingCodeRow:
+      description: Linking code with the issuing provider's name (admin view)
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        provider_id: { type: string, format: uuid }
+        provider_name: { type: string }
+        status: { type: string, enum: [pending, accepted, expired, revoked] }
+        invited_email: { type: [string, "null"], format: email }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        accepted_at: { type: [string, "null"], format: date-time }
+
+    LinkingLinkRow:
+      description: Patient–provider link with both names (admin view)
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string, format: uuid }
+        patient_name: { type: string }
+        provider_id: { type: string, format: uuid }
+        provider_name: { type: string }
+        linked_at: { type: string, format: date-time }
+        unlinked_at: { type: [string, "null"], format: date-time }
+
+    ProviderPerformanceRow:
+      description: Per-provider performance roll-up
+      type: object
+      properties:
+        provider_id: { type: string, format: uuid }
+        name: { type: string }
+        patient_count: { type: integer }
+        active_patients_7d: { type: integer }
+        reports_30d: { type: integer }
+        avg_response_hours: { type: [number, "null"] }
+        unanswered_over_24h: { type: integer }
+        notes_30d: { type: integer }
+
+    PatientEngagementRow:
+      description: Per-patient engagement classification
+      type: object
+      properties:
+        patient_id: { type: string, format: uuid }
+        first_name: { type: string }
+        last_name: { type: string }
+        tier: { type: string, enum: [highly_active, occasional, dormant, never_active] }
+        last_activity_at: { type: [string, "null"], format: date-time }
+        logs_30d: { type: integer }
+        reports_30d: { type: integer }
+        exercises_completed_30d: { type: integer }
+
+    SecuritySummary:
+      description: Security signals over a chosen window (failed logins, replays, new devices)
+      type: object
+      properties:
+        failed_logins: { type: integer }
+        failed_logins_by_ip:
+          type: array
+          items:
+            type: object
+            properties:
+              ip: { type: string }
+              count: { type: integer }
+        failed_logins_by_email:
+          type: array
+          items:
+            type: object
+            properties:
+              email: { type: string, format: email }
+              count: { type: integer }
+        refresh_token_replays: { type: integer }
+        new_device_logins: { type: integer }
+        hourly_failed_logins:
+          type: array
+          items:
+            type: object
+            properties:
+              hour: { type: string, format: date-time }
+              count: { type: integer }
+
+    PhiAccessByActor:
+      description: PHI access activity for one actor over a window
+      type: object
+      properties:
+        actor:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+            role: { type: string }
+        summary:
+          type: object
+          properties:
+            total_accesses: { type: integer }
+            unique_resources: { type: integer }
+            by_resource_type:
+              type: array
+              items:
+                type: object
+                properties:
+                  resource_type: { type: string }
+                  count: { type: integer }
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              count: { type: integer }
+        details:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLog' }
+
+    PhiAccessByResource:
+      description: Every actor that touched a single resource over a window
+      type: object
+      properties:
+        resource:
+          type: object
+          properties:
+            type: { type: string }
+            id: { type: string, format: uuid }
+        accesses:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLog' }
+        unique_actors: { type: integer }
+
+    PhiAnomalies:
+      description: Behavioural anomalies in PHI access patterns
+      type: object
+      properties:
+        bulk_listings:
+          type: array
+          items:
+            type: object
+            properties:
+              actor_id: { type: string, format: uuid }
+              actor_email: { type: string, format: email }
+              count: { type: integer }
+              window_start: { type: string, format: date-time }
+        unusual_patient_views:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    SystemMetrics:
+      description: Process and DB pool metrics for the running API instance
+      type: object
+      properties:
+        api:
+          type: object
+          properties:
+            uptime_seconds: { type: number }
+            memory:
+              type: object
+              properties:
+                rss_mb: { type: number }
+                heap_used_mb: { type: number }
+                heap_total_mb: { type: number }
+            cpu_load_1m: { type: number }
+            pid: { type: integer }
+            node_version: { type: string }
+        db:
+          type: object
+          properties:
+            pool_total: { type: integer }
+            pool_idle: { type: integer }
+            pool_waiting: { type: integer }
+
+    NotificationPreferencesSummary:
+      description: Aggregate notification-preference distribution across users
+      type: object
+      properties:
+        by_channel:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: { type: integer }
+        bounce_rate_24h: { type: number, description: "Percent (0–100)" }
+
+    AdminGlobalSearchResult:
+      description: Cross-entity search result (one or more of users / reports / audit_logs)
+      type: object
+      properties:
+        users:
+          type: array
+          items: { $ref: '#/components/schemas/AdminUserListItem' }
+        reports:
+          type: array
+          items: { $ref: '#/components/schemas/Report' }
+        audit_logs:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLog' }
+
+    AdminLinkingSummary:
+      description: Snapshot of linking system state
+      type: object
+      properties:
+        active_links: { type: integer }
+        disconnected_30d: { type: integer }
+        pending_codes: { type: integer }
+        expired_codes: { type: integer }
+        top_providers:
+          type: array
+          items:
+            type: object
+            properties:
+              provider_id: { type: string, format: uuid }
+              name: { type: string }
+              patient_count: { type: integer }
 
 paths:
   # ──────────────────────────── AUTH — PATIENT FLOW ─────────────────────────────
@@ -2126,7 +2754,7 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/ClinicalNote' }
-                  meta: { $ref: '#/components/schemas/OffsetMeta' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
     post:
       tags: [Providers]
       summary: Create a clinical note (provider-only)
@@ -2813,3 +3441,1379 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/SleepCorrelationBucket' }
+
+  # ──────────────────────────── AUTH (additions) ────────────────────────────────
+  /auth/admin/login:
+    post:
+      tags: [Auth]
+      summary: Admin login (always MFA-required)
+      description: Step 1 of admin login. Always returns mfa_required + mfa_token; admins must complete /auth/mfa/verify.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: MFA token for the second step
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MfaRequired' }
+        '401': { description: Invalid credentials }
+        '403': { description: "WRONG_PORTAL or ACCOUNT_INACTIVE" }
+        '429': { description: Account locked after 5 failed attempts }
+
+  /auth/request-email-change:
+    post:
+      tags: [Auth]
+      summary: Request to change the account email address
+      description: |
+        Step 1 of the two-step email change flow. Verifies the current password,
+        then emails a 6-digit verification code to the proposed new address.
+        Email is only updated after /auth/verify-email-change is called with
+        that code.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_email, current_password]
+              properties:
+                new_email: { type: string, format: email, description: "Lower-cased server-side" }
+                current_password: { type: string }
+      responses:
+        '200':
+          description: Verification code emailed to new address
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/EmailChangeRequestResult' }
+        '401': { description: Wrong current password }
+        '409': { description: New email already in use }
+
+  /auth/verify-email-change:
+    post:
+      tags: [Auth]
+      summary: Verify the new email address (step 2 of email change)
+      description: |
+        Submit the 6-digit code sent to the new address. On success the user's
+        email is updated and active sessions are NOT invalidated.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, minLength: 6, maxLength: 6 }
+      responses:
+        '200':
+          description: Email updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties: { ok: { type: boolean, enum: [true] } }
+        '400': { description: INVALID_CODE — wrong, expired, or replayed }
+
+  /auth/tos/current:
+    get:
+      tags: [Auth]
+      summary: Current Terms of Service version + acceptance state
+      description: Returns the published ToS version and whether the current user has accepted it.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TosCurrent' }
+
+  /auth/tos/accept:
+    post:
+      tags: [Auth]
+      summary: Record acceptance of a ToS version
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, minLength: 1, maxLength: 10, description: "Must match TosCurrent.current_version" }
+      responses:
+        '200':
+          description: Acceptance recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Accepted." }
+        '400': { description: Version does not match the published current version }
+
+  # ──────────────────────────── REPORTS (additions) ─────────────────────────────
+  /reports/mine:
+    get:
+      tags: [Reports]
+      summary: Patient — list own submitted reports
+      description: Reverse-chronological list of the calling patient's own reports, with offset pagination.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: urgency
+          in: query
+          schema: { type: string, enum: [routine, concerning, urgent] }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Patient's own reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Report' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '403': { description: Not a patient role }
+
+  # ──────────────────────────── PROVIDERS (additions) ───────────────────────────
+  /providers/analytics:
+    get:
+      tags: [Providers]
+      summary: Provider-wide analytics across all linked patients
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 7, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Aggregated analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ProviderAnalytics' }
+
+  /providers/patients/{patientId}/symptoms:
+    get:
+      tags: [Providers]
+      summary: List a linked patient's symptom logs (cursor-paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string, format: date-time, description: "logged_at of the last item from prior page" }
+      responses:
+        '200':
+          description: Symptom logs for the patient
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SymptomLog' }
+                  meta: { $ref: '#/components/schemas/CursorMeta' }
+        '403': { description: Provider is not linked to this patient }
+
+  /providers/patients/{patientId}/analytics:
+    get:
+      tags: [Providers]
+      summary: Per-patient analytics for a linked patient
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 7, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Aggregated patient analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PatientAnalytics' }
+        '403': { description: Provider is not linked to this patient }
+
+  /providers/patients/{patientId}/clinic-visits/last:
+    get:
+      tags: [Clinic Visits]
+      summary: Most recent clinic visit for a linked patient
+      description: Returns null when the patient has no recorded visits.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Latest visit or null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/ClinicVisit'
+                      - type: 'null'
+        '403': { description: Provider is not linked to this patient }
+
+  /providers/patients/{patientId}/clinic-visits:
+    post:
+      tags: [Clinic Visits]
+      summary: Record a clinic visit with a linked patient
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visited_at]
+              properties:
+                visited_at: { type: string, format: date-time, description: "Cannot be in the future" }
+                notes: { type: [string, "null"], maxLength: 2000 }
+      responses:
+        '201':
+          description: Visit recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ClinicVisit' }
+        '400': { description: visited_at is in the future }
+        '403': { description: Provider is not linked to this patient }
+
+  # ──────────────────────────── INTAKE FORMS ────────────────────────────────────
+  /intake-forms:
+    post:
+      tags: [Intake Forms]
+      summary: Create an intake form template (provider)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, fields]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200 }
+                description: { type: [string, "null"], maxLength: 2000 }
+                fields:
+                  type: array
+                  items: { $ref: '#/components/schemas/IntakeFieldDef' }
+      responses:
+        '201':
+          description: Form created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IntakeForm' }
+    get:
+      tags: [Intake Forms]
+      summary: List intake forms owned by the current provider
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Forms
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/IntakeForm' }
+
+  /intake-forms/assignments/mine:
+    get:
+      tags: [Intake Forms]
+      summary: Patient — list intake assignments the patient has been given
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Assignments (form fields embedded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/IntakeAssignmentForPatient' }
+
+  /intake-forms/{formId}:
+    get:
+      tags: [Intake Forms]
+      summary: Get an intake form by ID
+      description: Provider sees their own forms. Patients can view only forms assigned to them.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: formId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Form
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IntakeForm' }
+        '403': { description: Form is not owned by / assigned to caller }
+        '404': { description: Not found }
+    patch:
+      tags: [Intake Forms]
+      summary: Update an intake form (provider)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: formId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200 }
+                description: { type: [string, "null"], maxLength: 2000 }
+                fields:
+                  type: array
+                  items: { $ref: '#/components/schemas/IntakeFieldDef' }
+                status: { type: string, enum: [draft, published, archived] }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IntakeForm' }
+        '404': { description: Not found }
+    delete:
+      tags: [Intake Forms]
+      summary: Delete an intake form (provider)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: formId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
+
+  /intake-forms/{formId}/assign:
+    post:
+      tags: [Intake Forms]
+      summary: Assign an intake form to a linked patient (provider)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: formId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [patient_id]
+              properties:
+                patient_id: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Assignment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IntakeFormAssignment' }
+        '403': { description: Provider is not linked to this patient }
+        '404': { description: Form not found / not owned by you }
+
+  /intake-forms/{formId}/responses:
+    get:
+      tags: [Intake Forms]
+      summary: Provider — list all responses to one of their forms
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: formId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Responses joined with patient names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/IntakeResponseRow' }
+        '403': { description: Form not owned by you }
+    post:
+      tags: [Intake Forms]
+      summary: Patient — submit a response to an assigned form
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: formId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers:
+                  type: array
+                  items: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IntakeResponse' }
+        '403': { description: Form is not assigned to this patient }
+        '409': { description: Already submitted }
+
+  # ──────────────────────────── ADMIN ──────────────────────────────────────────
+  /admin/analytics:
+    get:
+      tags: [Admin]
+      summary: Cross-platform analytics for the admin overview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 7, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Platform analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PlatformAnalytics' }
+
+  /admin/stats:
+    get:
+      tags: [Admin]
+      summary: Headline stats for the admin dashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminStats' }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List all users with filters
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: role, in: query, schema: { type: string, enum: [patient, provider, admin] } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AdminUserListItem' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/users/{id}:
+    get:
+      tags: [Admin]
+      summary: Get user detail (full profile + provider details)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: User detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminUserDetail' }
+        '404': { description: Not found }
+    patch:
+      tags: [Admin]
+      summary: Update user (deactivate / role change / force resets)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_active: { type: boolean }
+                role: { type: string, enum: [patient, provider, admin] }
+                force_password_reset: { type: boolean, description: "Invalidates all sessions and requires reset on next login" }
+                force_mfa_reset: { type: boolean, description: "Clears MFA secret + backup codes; user must re-enroll" }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      is_active: { type: boolean }
+                      role: { type: string }
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: List audit log entries with filters
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: resource_type, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditLog' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/audit-logs/export:
+    get:
+      tags: [Admin]
+      summary: Export audit logs as CSV (max 90 days per request)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: CSV download
+          content:
+            text/csv:
+              schema: { type: string, description: "Columns: id, user_id, action, resource_type, resource_id, ip_address, user_agent, metadata, created_at" }
+        '400': { description: Range exceeds 90 days }
+
+  /admin/login-events:
+    get:
+      tags: [Admin]
+      summary: List login events (success + failure) with filters
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: success, in: query, schema: { type: boolean } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Login events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/LoginEvent' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/reports:
+    get:
+      tags: [Admin]
+      summary: List all reports across all providers (admin oversight)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: urgency, in: query, schema: { type: string, enum: [routine, concerning, urgent] } }
+        - { name: status, in: query, schema: { type: string, enum: [submitted, viewed, reviewed, responded] } }
+        - { name: unanswered_over_hours, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Report' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/outbox/stats:
+    get:
+      tags: [Admin]
+      summary: Notification outbox aggregate counts
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+
+  /admin/outbox/dlq:
+    get:
+      tags: [Admin]
+      summary: Dead-letter queue items (sends that exhausted retries)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: channel, in: query, schema: { type: string, enum: [email, sms, push] } }
+      responses:
+        '200':
+          description: DLQ items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OutboxItem' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/outbox/pending:
+    get:
+      tags: [Admin]
+      summary: Outbox items still pending delivery
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: channel, in: query, schema: { type: string, enum: [email, sms, push] } }
+      responses:
+        '200':
+          description: Pending items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OutboxItem' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/outbox/{id}/retry:
+    post:
+      tags: [Admin]
+      summary: Manually retry a single outbox item
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Re-enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      retried: { type: boolean, enum: [true] }
+        '404': { description: Not found }
+
+  /admin/outbox/{id}:
+    delete:
+      tags: [Admin]
+      summary: Drop an outbox item (do not retry)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Dropped }
+        '404': { description: Not found }
+
+  /admin/sessions/active:
+    get:
+      tags: [Admin]
+      summary: Active sessions across all users
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: role, in: query, schema: { type: string, enum: [patient, provider, admin] } }
+      responses:
+        '200':
+          description: Sessions with summary counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Session' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+                  summary:
+                    type: object
+                    additionalProperties: { type: integer }
+
+  /admin/sessions/{id}:
+    delete:
+      tags: [Admin]
+      summary: Force-terminate any user's session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Terminated }
+        '404': { description: Not found }
+
+  /admin/jobs:
+    get:
+      tags: [Admin]
+      summary: Summary state for every scheduled job
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/JobSummary' }
+
+  /admin/jobs/{name}/history:
+    get:
+      tags: [Admin]
+      summary: Run history for a single scheduled job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string, example: reminderJob } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Job runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/JobRun' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/jobs/{name}/run:
+    post:
+      tags: [Admin]
+      summary: Trigger a job to run immediately (out of cron schedule)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [reminderJob, codeExpiryJob, weeklyDigestJob, cleanupJob, orphanFileCleanupJob, outboxJob]
+      responses:
+        '202':
+          description: Enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      job: { type: string }
+                      status: { type: string, enum: [enqueued] }
+        '400': { description: Unknown job name }
+
+  /admin/providers/performance:
+    get:
+      tags: [Admin]
+      summary: Per-provider performance roll-up (response times, workload, etc.)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: sort, in: query, schema: { type: string, description: "Column name to sort on" } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses:
+        '200':
+          description: Provider performance rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProviderPerformanceRow' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/patients/engagement:
+    get:
+      tags: [Admin]
+      summary: Patient engagement classification + summary counts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: tier, in: query, schema: { type: string, enum: [highly_active, occasional, dormant, never_active] } }
+      responses:
+        '200':
+          description: Engagement rows + summary counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PatientEngagementRow' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+                  summary:
+                    type: object
+                    properties:
+                      highly_active: { type: integer }
+                      occasional: { type: integer }
+                      dormant: { type: integer }
+                      never_active: { type: integer }
+
+  /admin/security/summary:
+    get:
+      tags: [Admin]
+      summary: Security signals over a chosen window
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: window
+          in: query
+          required: true
+          schema: { type: string, enum: [1h, 6h, 12h, 24h, 7d] }
+      responses:
+        '200':
+          description: Security signals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SecuritySummary' }
+
+  /admin/linking/summary:
+    get:
+      tags: [Admin]
+      summary: Snapshot of patient–provider linking state
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminLinkingSummary' }
+
+  /admin/linking/codes:
+    get:
+      tags: [Admin]
+      summary: List linking codes with provider names
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, accepted, expired, revoked] } }
+      responses:
+        '200':
+          description: Codes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/LinkingCodeRow' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/linking/links:
+    get:
+      tags: [Admin]
+      summary: List patient–provider links (active or disconnected)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: status, in: query, schema: { type: string, enum: [active, disconnected] } }
+      responses:
+        '200':
+          description: Links
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/LinkingLinkRow' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/phi-access/by-actor:
+    get:
+      tags: [Admin]
+      summary: PHI access activity for one actor over a window
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Access summary + timeline + details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PhiAccessByActor' }
+
+  /admin/phi-access/by-resource:
+    get:
+      tags: [Admin]
+      summary: Every actor that accessed a single PHI resource over a window
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: resource_type, in: query, required: true, schema: { type: string } }
+        - { name: resource_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Access list + unique-actor count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PhiAccessByResource' }
+
+  /admin/phi-access/anomalies:
+    get:
+      tags: [Admin]
+      summary: PHI access anomaly detection (bulk listings, unusual patient views)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: window, in: query, required: true, schema: { type: string, enum: [1h, 6h, 12h, 24h, 7d] } }
+      responses:
+        '200':
+          description: Anomaly groupings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PhiAnomalies' }
+
+  /admin/notifications/preferences-summary:
+    get:
+      tags: [Admin]
+      summary: Aggregate notification preferences across all users + bounce rate
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Aggregated preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NotificationPreferencesSummary' }
+
+  /admin/search:
+    get:
+      tags: [Admin]
+      summary: Cross-entity global search (users / reports / audit_logs)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2 } }
+        - { name: types, in: query, schema: { type: string, description: "Comma-separated subset: user,report,audit_log" } }
+      responses:
+        '200':
+          description: Matches grouped by entity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminGlobalSearchResult' }
+
+  /admin/broadcasts:
+    post:
+      tags: [Admin]
+      summary: Send a broadcast notification (or schedule one)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audience, type, title, body, channels]
+              properties:
+                audience: { type: string, description: "e.g. all_patients, all_providers, role:admin" }
+                type: { type: string }
+                title: { type: string, minLength: 1, maxLength: 200 }
+                body: { type: string, minLength: 1, maxLength: 4000 }
+                channels:
+                  type: array
+                  items: { type: string, enum: [email, sms, push, in_app] }
+                scheduled_at: { type: [string, "null"], format: date-time }
+      responses:
+        '201':
+          description: Broadcast queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      broadcast_id: { type: string, format: uuid }
+                      recipient_count: { type: integer }
+    get:
+      tags: [Admin]
+      summary: List broadcasts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Broadcasts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Broadcast' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/system/metrics:
+    get:
+      tags: [Admin]
+      summary: Process + DB pool metrics for the running API instance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SystemMetrics' }
+
+  /admin/scheduled-reports:
+    post:
+      tags: [Admin]
+      summary: Create a scheduled report
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, entity, filters, cadence, recipient_emails]
+              properties:
+                name: { type: string }
+                entity: { type: string }
+                filters:
+                  type: object
+                  additionalProperties: true
+                cadence: { type: string, enum: [daily, weekly, monthly] }
+                recipient_emails:
+                  type: array
+                  items: { type: string, format: email }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ScheduledReport' }
+    get:
+      tags: [Admin]
+      summary: List scheduled reports
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ScheduledReport' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /admin/scheduled-reports/{id}:
+    patch:
+      tags: [Admin]
+      summary: Update a scheduled report (rename, change cadence, toggle, etc.)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                filters:
+                  type: object
+                  additionalProperties: true
+                cadence: { type: string, enum: [daily, weekly, monthly] }
+                recipient_emails:
+                  type: array
+                  items: { type: string, format: email }
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ScheduledReport' }
+        '404': { description: Not found }
+    delete:
+      tags: [Admin]
+      summary: Delete a scheduled report
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
+
+  /admin/feature-flags:
+    get:
+      tags: [Admin]
+      summary: List all feature flags
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Flags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FeatureFlag' }
+    post:
+      tags: [Admin]
+      summary: Create a feature flag
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, enabled]
+              properties:
+                key: { type: string, description: "Unique slug, e.g. patient_export_v2" }
+                enabled: { type: boolean }
+                description: { type: string }
+                rollout_percent: { type: integer, minimum: 0, maximum: 100, default: 100 }
+                target_roles:
+                  type: array
+                  items: { type: string, enum: [patient, provider, admin] }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FeatureFlag' }
+        '409': { description: Key already exists }
+
+  /admin/feature-flags/{key}:
+    patch:
+      tags: [Admin]
+      summary: Update a feature flag (toggle, change rollout, etc.)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                description: { type: string }
+                rollout_percent: { type: integer, minimum: 0, maximum: 100 }
+                target_roles:
+                  type: array
+                  items: { type: string, enum: [patient, provider, admin] }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FeatureFlag' }
+        '404': { description: Not found }
+    delete:
+      tags: [Admin]
+      summary: Delete a feature flag
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }

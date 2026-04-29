@@ -8,28 +8,29 @@ Follow these steps in order to get the API running locally.
 
 - [ ] **Node.js >= 20** installed (`node -v`)
 - [ ] **npm >= 10** installed (`npm -v`)
-- [ ] **Docker** installed and running (`docker --version`)
+- [ ] **PostgreSQL 16** installed and running on `localhost:5432` (`psql postgres -c 'SELECT 1'` works)
 - [ ] **Git** — repo cloned at `tmjconnect/`
+
+macOS quickstart: `brew install postgresql@16 && brew services start postgresql@16`
+Ubuntu quickstart: `sudo apt install postgresql-16 && sudo systemctl start postgresql`
 
 ---
 
-## 1. Start PostgreSQL
+## 1. Create the Databases and Role
 
 ```bash
-cd docker
-docker compose -f docker-compose.dev.yml up -d
+psql postgres <<'SQL'
+CREATE ROLE tmjconnect WITH LOGIN PASSWORD 'dev_password';
+CREATE DATABASE tmjconnect      OWNER tmjconnect;
+CREATE DATABASE tmjconnect_test OWNER tmjconnect;
+SQL
 ```
 
-Verify it's running:
-```bash
-docker compose -f docker-compose.dev.yml ps
-# postgres should show "healthy"
-```
-
-Connection details (from docker-compose.dev.yml):
+Connection details:
 - Host: `localhost`
 - Port: `5432`
-- Database: `tmjconnect`
+- Dev database: `tmjconnect`
+- Test database: `tmjconnect_test`
 - User: `tmjconnect`
 - Password: `dev_password`
 
@@ -37,10 +38,13 @@ Connection details (from docker-compose.dev.yml):
 
 ## 2. Enable uuid-ossp Extension
 
-The schema uses `uuid_generate_v4()`. Connect to the database and enable it:
+The schema uses `uuid_generate_v4()`. Enable it in both databases:
 
 ```bash
-docker exec -it docker-postgres-1 psql -U tmjconnect -d tmjconnect -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+psql postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect \
+  -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+psql postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect_test \
+  -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 ```
 
 ---
@@ -52,7 +56,7 @@ From the repo root:
 npm install
 ```
 
-This installs all workspaces (`apps/api`, `packages/shared`).
+This installs all workspaces (`apps/api`, `apps/provider`, `apps/admin`, `packages/shared`).
 
 ---
 
@@ -60,13 +64,6 @@ This installs all workspaces (`apps/api`, `packages/shared`).
 
 The API imports types and schemas from `@tmjconnect/shared`. It must be built before the API can start:
 
-```bash
-cd packages/shared
-npm run build
-cd ../..
-```
-
-Or from root:
 ```bash
 npm run build --workspace=packages/shared
 ```
@@ -86,10 +83,10 @@ Edit `apps/api/.env` and set the **required** values:
 | Variable | Value for local dev |
 |---|---|
 | `DATABASE_URL` | `postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect` |
-| `JWT_SECRET` | Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `JWT_SECRET` | Generate: `openssl rand -hex 32` |
 | `JWT_REFRESH_SECRET` | Generate: same command, different value |
-| `MFA_ENCRYPTION_KEY` | Generate: same command (must be exactly 64 hex chars) |
-| `ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:8081` |
+| `MFA_ENCRYPTION_KEY` | Generate: `openssl rand -hex 32` (must be exactly 64 hex chars) |
+| `ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5174,http://localhost:8081` |
 
 ### Optional (stub mode in dev if absent)
 
@@ -117,18 +114,20 @@ Edit `apps/api/.env` and set the **required** values:
 ## 6. Run Database Migrations
 
 ```bash
-cd apps/api
-DATABASE_URL="postgresql://tmjconnect:dev_password@127.0.0.1:5434/tmjconnect" npx drizzle-kit push:pg
-cd ../..
+npm run db:migrate --workspace=apps/api
+
+# Same command, against the test DB
+DATABASE_URL=postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect_test \
+  npm run db:migrate --workspace=apps/api
 ```
 
-This reads the Drizzle schema files and applies them directly to the database (creates all tables, enums, indexes, and constraints).
+This applies the hand-written SQL migrations in `apps/api/drizzle/migrations/` (tables, enums, indexes, triggers, check constraints).
 
 ---
 
 ## 7. Create Upload Directory
 
-If using local storage driver (default):
+If using the local storage driver (default):
 ```bash
 mkdir -p apps/api/uploads
 ```
@@ -142,16 +141,11 @@ From the repo root:
 npm run dev:api
 ```
 
-Or from `apps/api/`:
-```bash
-npm run dev
-```
-
 You should see:
 ```
 TMJConnect API started { port: 3000, env: 'development' }
 Database connection verified
-Scheduled jobs registered (5 jobs)
+Scheduled jobs registered
 Swagger UI available at /docs
 ```
 
@@ -193,7 +187,8 @@ Check the console logs for the verification code (since Resend is in stub mode):
 | Problem | Fix |
 |---|---|
 | `FATAL: Environment validation failed` | Check `.env` file — a required variable is missing or malformed |
-| `Cannot connect to database — shutting down` | Ensure PostgreSQL is running: `docker compose -f docker/docker-compose.dev.yml ps` |
+| `Cannot connect to database — shutting down` | Ensure PostgreSQL is running: `pg_isready` on macOS/Linux, or `brew services list` / `systemctl status postgresql` |
+| `role "tmjconnect" does not exist` | Re-run Step 1 |
 | `relation "users" does not exist` | Run migrations: Step 6 |
 | `function uuid_generate_v4() does not exist` | Enable extension: Step 2 |
 | `Cannot find module '@tmjconnect/shared'` | Build shared package: Step 4 |
@@ -205,11 +200,18 @@ Check the console logs for the verification code (since Resend is in stub mode):
 ## Quick Start (all steps in one go)
 
 ```bash
-# 1. PostgreSQL
-cd docker && docker compose -f docker-compose.dev.yml up -d && cd ..
+# 1. Create role + dev/test databases
+psql postgres <<'SQL'
+CREATE ROLE tmjconnect WITH LOGIN PASSWORD 'dev_password';
+CREATE DATABASE tmjconnect      OWNER tmjconnect;
+CREATE DATABASE tmjconnect_test OWNER tmjconnect;
+SQL
 
-# 2. uuid extension
-docker exec -it docker-postgres-1 psql -U tmjconnect -d tmjconnect -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+# 2. uuid extension (both DBs)
+psql postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect \
+  -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+psql postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect_test \
+  -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 
 # 3. Dependencies
 npm install
@@ -221,8 +223,10 @@ npm run build --workspace=packages/shared
 cp apps/api/.env.example apps/api/.env
 # Edit apps/api/.env — set JWT_SECRET, JWT_REFRESH_SECRET, MFA_ENCRYPTION_KEY, DATABASE_URL
 
-# 6. Migrations
-cd apps/api && DATABASE_URL="postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect" npx drizzle-kit push:pg && cd ../..
+# 6. Migrations (dev + test)
+npm run db:migrate --workspace=apps/api
+DATABASE_URL=postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect_test \
+  npm run db:migrate --workspace=apps/api
 
 # 7. Upload dir
 mkdir -p apps/api/uploads

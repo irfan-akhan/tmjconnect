@@ -1,7 +1,21 @@
-// Load .env file unless we're in test mode (tests set env vars explicitly via setupTestEnv).
+// Local-dev env loading.
+//
+// On a VPS the systemd unit injects vars via `EnvironmentFile=`, so process.env
+// is already populated before node starts and dotenv finds nothing to do.
+//
+// For local dev we load `.env.${NODE_ENV}` first (e.g. `.env.development`,
+// `.env.production` if you want to mirror prod locally) and then fall back to
+// a plain `.env` for any keys not set above. dotenv's first-write-wins means
+// .env values do NOT override the env-specific file.
+//
+// Tests set every var explicitly in setupTestEnv — skip dotenv entirely there
+// so a stray local `.env` can't change test behavior.
 if (process.env.NODE_ENV !== 'test') {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  require('dotenv/config');
+  const dotenv = require('dotenv');
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  dotenv.config({ path: `.env.${nodeEnv}` });
+  dotenv.config({ path: '.env' });
 }
 import { z } from 'zod';
 
@@ -12,7 +26,14 @@ import { z } from 'zod';
  */
 const envSchema = z.object({
   // ─── Server ──────────────────────────────────────────────────────────────────
+  // NODE_ENV drives Node-runtime behavior (npm install --omit=dev, react/express
+  // optimizations). Use `production` on the test VPS too — we want test to behave
+  // like production, just pointed at a different DB.
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  // APP_ENV is the deployment label, surfaced in logs and Sentry. Decoupled from
+  // NODE_ENV so the test VPS can run `NODE_ENV=production` while still being
+  // labeled `test` everywhere it matters.
+  APP_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 
   // ─── Database (required) ─────────────────────────────────────────────────────
@@ -39,8 +60,12 @@ const envSchema = z.object({
   // ─── CORS (required) ─────────────────────────────────────────────────────────
   ALLOWED_ORIGINS: z.string().min(1, 'ALLOWED_ORIGINS must be a comma-separated list of origins'),
 
-  // ─── Email — Resend (optional) ───────────────────────────────────────────────
-  RESEND_API_KEY: z.string().optional(),
+  // ─── Email — Twilio SendGrid (optional in dev, required in prod) ────────────
+  SENDGRID_API_KEY: z.string().optional(),
+  // The "from" address must be a SendGrid Single Sender (dev/test) or a
+  // domain-authenticated address (prod). Defaults work only after you've
+  // configured noreply@mail.tmjconnect.com in SendGrid.
+  SENDGRID_FROM: z.string().optional(),
 
   // ─── SMS — Twilio (optional) ─────────────────────────────────────────────────
   TWILIO_ACCOUNT_SID: z.string().optional(),
@@ -68,6 +93,13 @@ const envSchema = z.object({
 
   // ─── Logging ─────────────────────────────────────────────────────────────────
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
+  // ─── API docs ────────────────────────────────────────────────────────────────
+  // When true, mounts Swagger UI at /docs. Off by default — flip on per-env.
+  ENABLE_DOCS: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
 
   // ─── Backup ──────────────────────────────────────────────────────────────────
   BACKUP_PASSPHRASE: z.string().optional(),

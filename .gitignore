@@ -9,12 +9,22 @@ build/
 .next/
 out/
 
-# Environment files — never commit secrets
+# Environment files — never commit secrets.
+# `.env.*.example` templates ARE committed; the unsuffixed `.env.development`
+# (etc.) are populated locally and stay on disk only.
 .env
 .env.local
+.env.development
+.env.test
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local
+# Re-allow the templates (they are the only safe versions to commit)
+!.env.example
+!.env.development.example
+!.env.test.example
+!.env.production.example
 
 # Drizzle generated (keep migrations, ignore meta snapshots in .gitignore if desired)
 # drizzle/migrations/  ← do NOT ignore — migrations must be committed
@@ -43,3 +53,6 @@ coverage/
 # Firebase service account (contains private key — never commit)
 firebase-service-account.json
 *service-account*.json
+
+# Local Netlify folder
+.netlify

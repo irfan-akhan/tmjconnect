@@ -40,7 +40,7 @@
 
 TMJConnect is a HIPAA-compliant orofacial pain management platform. It consists of three client applications — a **Patient mobile app**, a **Provider web portal**, and an **Admin dashboard** — all backed by a single REST API. A static **landing page** completes the product surface.
 
-The architecture is designed for a solo developer to build within 6–8 weeks, with a clear migration path from a Docker Compose VPS pilot (25–50 users) to a full AWS production environment (5,000+ users). The same codebase and Docker image runs in both environments; the only change between environments is configuration via environment variables.
+The architecture is designed for a solo developer to build within 6–8 weeks, with a clear migration path from a native-host VPS pilot (systemd + nginx + Postgres, 25–50 users) to a full AWS production environment (5,000+ users). The same codebase runs in both environments; the only change between environments is configuration via environment variables.
 
 ### Guiding Principles
 
@@ -376,14 +376,14 @@ There are no microservices. There are no message queues. There is no cache layer
 
 | Component | Pilot (VPS) | Production (AWS) |
 |---|---|---|
-| Express API | Docker container on VPS | ECS Fargate or EC2 |
-| PostgreSQL | Docker container on VPS | RDS PostgreSQL Multi-AZ |
+| Express API | `node` process under systemd on VPS | ECS Fargate or EC2 |
+| PostgreSQL | Host `postgresql@16` systemd service | RDS PostgreSQL Multi-AZ |
 | File storage | Local disk + Nginx | S3 + CloudFront (signed URLs) |
-| Reverse proxy / SSL | Nginx + Let's Encrypt | ALB + ACM certificate |
-| Provider portal | Nginx static files | S3 + CloudFront |
-| Admin dashboard | Nginx static files | S3 + CloudFront |
+| Reverse proxy / SSL | Nginx + Let's Encrypt (`certbot --nginx`) | ALB + ACM certificate |
+| Provider portal | Nginx static files (from `apps/provider/dist`) | S3 + CloudFront |
+| Admin dashboard | Nginx static files (from `apps/admin/dist`) | S3 + CloudFront |
 | Landing page | Nginx static files | S3 + CloudFront |
-| Process manager | PM2 inside Docker | ECS task management |
+| Process manager | systemd (`tmjconnect-api.service`) | ECS task management |
 | DNS | Cloudflare | Route 53 |
 
 ---
@@ -403,11 +403,9 @@ tmjconnect/
 ├── packages/
 │   ├── shared/                           # Shared TypeScript types, Zod schemas, API contract types
 │   └── ui/                               # Shared React components (portal + admin)
-├── docker/
-│   ├── docker-compose.yml                # Production-like: api + postgres + nginx
-│   ├── docker-compose.dev.yml            # Dev: postgres only
-│   ├── nginx.conf                        # Reverse proxy + SSL + static file serving
-│   └── .env.example
+├── scripts/
+│   ├── backup.sh                         # Nightly encrypted pg_dump | gzip | gpg
+│   └── restore-drill.sh                  # Monthly restore verification against a drill DB
 └── package.json                          # Root workspace config
 ```
 
@@ -493,7 +491,6 @@ apps/api/
 │   ├── migrations/                       # Auto-generated SQL migration files (drizzle-kit generate)
 │   └── meta/                             # Drizzle migration metadata (do not edit manually)
 ├── drizzle.config.ts                     # drizzle-kit config: schema path, migrations path, db credentials
-├── Dockerfile
 ├── package.json
 ├── tsconfig.json
 └── .env.example
@@ -1501,7 +1498,7 @@ Sprint 1 admin work: **User Management** and **Audit Log Viewer** only. All othe
 | Layer | Mechanism |
 |---|---|
 | Client → API | TLS 1.2+ everywhere. HTTPS only. HSTS headers via Helmet. Certificate pinning on mobile (Expo plugin — add post-go-live to avoid cert rotation lockouts). |
-| API → Database | `sslmode=require` on all PostgreSQL connections. On the VPS pilot, the Docker `pg` container is configured with a self-signed certificate. On AWS, RDS enforces SSL by default. The `DATABASE_URL` must include `?sslmode=require`. |
+| API → Database | For pilot: API and Postgres run on the same host and connect over `localhost` (no TLS required on loopback). On AWS, RDS enforces SSL by default — the `DATABASE_URL` must include `?sslmode=require`. |
 | Data at rest | PostgreSQL disk encryption (VPS: LUKS full-disk encryption; AWS: RDS encryption enabled). S3 server-side encryption (AES-256). |
 | Database backups | All `pg_dump` output is encrypted before storage: piped through `gpg --symmetric --cipher-algo AES256` with a backup passphrase stored in a separate secrets vault (not in the `.env` file). Backup files are stored with `chmod 600` permissions on the VPS. On AWS, RDS snapshots are encrypted automatically. |
 | Passwords | bcrypt, 12 salt rounds. Never stored plain. Never logged. Never returned in API responses. |
@@ -1607,7 +1604,7 @@ HIPAA requires a documented breach notification procedure (§164.408). This appl
 **Immediate containment (within 1 hour of detection):**
 1. Revoke compromised credentials (rotate `JWT_SECRET`, `JWT_REFRESH_SECRET`, database passwords) if credential compromise is suspected.
 2. Isolate affected systems (disable public API, revoke VPS SSH keys if server-level breach).
-3. Preserve evidence — do not delete logs, do not restart containers without capturing state.
+3. Preserve evidence — capture `journalctl -u tmjconnect-api --since "24h ago"` and `audit_logs` snapshots before any restart.
 
 **Investigation (within 24 hours):**
 1. Query `audit_logs` and `login_events` to determine scope: which users, which records, which time window.
@@ -1637,32 +1634,36 @@ Section 6.10 specifies database role permissions. This section extends the princ
 
 | Resource | Principle Applied |
 |---|---|
-| **Docker container** | API process runs as a non-root user (`USER node` in Dockerfile). No root access inside the container. |
-| **File system** | The API process has write access only to `UPLOAD_DIR`. No write access to application code directories. Config files are read-only. |
+| **API process** | Runs as the unprivileged `tmjconnect` system user under systemd. The unit sets `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, and limits writable paths to `/var/lib/tmjconnect` via `ReadWritePaths=`. |
+| **File system** | The API process has write access only to `UPLOAD_DIR` (`/var/lib/tmjconnect/uploads`). Application code at `/opt/tmjconnect` is owned by `tmjconnect` but the systemd sandbox marks the rest of the filesystem read-only. The env file at `/etc/tmjconnect/api.env` is `root:tmjconnect 640`. |
 | **S3 IAM policy** | The IAM role used by ECS tasks grants only `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on the `tmjconnect-uploads` bucket. No `s3:*` wildcard. No access to other buckets. |
 | **Firebase service account** | Service account has only `cloudmessaging.messages.create` permission. No Firestore, no Auth, no Storage access. |
 | **Sentry project** | Sentry DSN is project-scoped. No organisation-level token. PII scrubbing is enforced before any data leaves the API. |
-| **GitHub Actions** | Workflow uses `permissions: contents: read, packages: write` only. No `admin`, no `pull_requests: write`. SSH key for VPS deployment is a deploy key with restricted access — not a user SSH key. |
+| **GitHub Actions** | Workflow uses `permissions: contents: read` only. No `admin`, no `pull_requests: write`. SSH key for VPS deployment is a deploy key with restricted access — not a user SSH key. |
 | **VPS SSH** | SSH access is key-only (password auth disabled). Root login disabled. Only the `deploy` user can connect. Firewall allows only ports 80, 443, and 22. |
 
-**Dockerfile least privilege:**
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY --chown=node:node . .
-RUN npm ci --only=production
-USER node
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
+**systemd unit least privilege** (excerpt — full unit in `docs/DEPLOYMENT.md`):
+```ini
+[Service]
+User=tmjconnect
+Group=tmjconnect
+EnvironmentFile=/etc/tmjconnect/api.env
+ExecStart=/usr/bin/node dist/index.js
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tmjconnect
+AmbientCapabilities=
 ```
 
 ### 14.10 Observability & Metrics
 
 Beyond structured logging (Section 3.6) and audit logging (Section 11), the following observability mechanisms are built in for production monitoring:
 
-**Health endpoint** (`GET /health`) — Section 15.5. Used by Docker/ECS for liveness checks.
+**Health endpoint** (`GET /health`) — Section 15.5. Used by uptime monitors (pilot) and ECS for liveness checks (production).
 
-**Request metrics** — `pino-http` logs `responseTime` on every request. In production, these logs are shipped to CloudWatch Logs (ECS) or parsed from Docker logs (pilot). Key metrics derived from logs:
+**Request metrics** — `pino-http` logs `responseTime` on every request. In production, these logs are shipped to CloudWatch Logs (ECS) or forwarded from the systemd journal (pilot). Key metrics derived from logs:
 
 | Metric | Source | Alert Threshold |
 |---|---|---|
@@ -1678,7 +1679,7 @@ Beyond structured logging (Section 3.6) and audit logging (Section 11), the foll
 - P1 alerts: 5xx spike (> 5 in 5 minutes).
 - P2 alerts: external service failure (email, SMS, push).
 
-**Production dashboards (post-pilot):** When migrating to AWS, CloudWatch dashboards track: API latency, error rates, RDS connection count, ECS CPU/memory, S3 request count. For pilot, `docker logs` + Sentry is sufficient.
+**Production dashboards (post-pilot):** When migrating to AWS, CloudWatch dashboards track: API latency, error rates, RDS connection count, ECS CPU/memory, S3 request count. For pilot, `journalctl -u tmjconnect-api` + Sentry is sufficient.
 
 ---
 
@@ -1785,7 +1786,7 @@ The `parsePagination()` utility extracts and validates `page`/`limit` from query
 { "status": "healthy", "timestamp": "2026-04-08T14:23:00Z", "checks": { "database": "ok", "uptime": 3600 } }
 ```
 
-The endpoint executes `SELECT 1` against PostgreSQL. If the query fails or times out (>2s), the response returns `503 Service Unavailable` with `{ "status": "unhealthy", "checks": { "database": "failed" } }`. Docker and ECS health checks use this endpoint to determine container liveness.
+The endpoint executes `SELECT 1` against PostgreSQL. If the query fails or times out (>2s), the response returns `503 Service Unavailable` with `{ "status": "unhealthy", "checks": { "database": "failed" } }`. External uptime monitors (pilot) and ECS health probes (production) use this endpoint to determine service liveness.
 
 ---
 
@@ -1793,27 +1794,21 @@ The endpoint executes `SELECT 1` against PostgreSQL. If the query fails or times
 
 ### 16.1 Pilot (VPS)
 
-Single VPS with 4 vCPU, 8 GB RAM, 100 GB SSD running Docker Compose. Handles 25–50 concurrent users easily.
+Single VPS with 4 vCPU, 8 GB RAM, 100 GB SSD running native services. Handles 25–50 concurrent users easily.
 
-**`docker-compose.yml`:**
-- `api` — Express.js (Node 20 Alpine). Port 3000. Health check on `/health`.
-- `postgres` — PostgreSQL 16. Port 5432. Data persisted to named volume.
-- `nginx` — Reverse proxy + SSL termination + static file serving. Ports 80, 443.
+**Running services on the host:**
+- `tmjconnect-api.service` (systemd) — Node 20 runs `apps/api/dist/index.js` as the `tmjconnect` user. Bound to `127.0.0.1:3000`.
+- `postgresql.service` (systemd) — PostgreSQL 16 from the Ubuntu apt package. `listen_addresses = 'localhost'`. Data at `/var/lib/postgresql/16/main`.
+- `nginx.service` (systemd) — Reverse proxy + TLS termination + static file serving for the provider/admin SPAs and `/uploads`. Ports 80, 443.
+- `certbot.timer` (systemd) — renews Let's Encrypt certs twice daily; nginx reloads via deploy hook.
 
-**Docker log rotation:** All services in `docker-compose.yml` include a `logging` block to prevent unbounded disk growth:
-```yaml
-logging:
-  driver: json-file
-  options:
-    max-size: "10m"
-    max-file: "5"
-```
-This caps each container's log at 50 MB (5 × 10 MB). Application logs flow through pino to stdout — Docker captures them. `docker compose logs` can still tail recent output.
+**Log rotation:** journald captures API stdout and rotates automatically (`/etc/systemd/journald.conf` controls retention — defaults are fine for pilot). nginx uses `logrotate` from its apt package. Application logs flow through pino to stdout and are tailed with `journalctl -u tmjconnect-api -f`.
 
 **Deployment process:**
 1. Push to `main` branch.
-2. GitHub Actions: run tests → build Docker image → push to GitHub Container Registry (GHCR).
-3. SSH into VPS. Pull new image. `docker compose up -d`. Health check confirms new container is up.
+2. GitHub Actions: run tests → SSH to VPS → `git pull` + `npm ci` + `npm run build` across workspaces.
+3. `npm run db:migrate --workspace=apps/api`, then `sudo systemctl restart tmjconnect-api`.
+4. The workflow polls `/health` to confirm the new process is up.
 
 **Graceful shutdown:** The `index.ts` entry point registers a `SIGTERM` handler that:
 1. Stops accepting new connections (`server.close()`).
@@ -1821,7 +1816,7 @@ This caps each container's log at 50 MB (5 × 10 MB). Application logs flow thro
 3. Closes the database pool (`pool.end()`).
 4. Exits with code 0.
 
-This ensures zero dropped requests on `docker compose up -d` (Docker sends `SIGTERM` to the old container). PM2 also forwards `SIGTERM` on restarts.
+systemd sends `SIGTERM` on `systemctl restart`, waits for the shutdown, then starts the new process — so deploys produce only a ~1–2 s nginx 502 window rather than dropped in-flight requests.
 
 **Monthly cost:** ~$20–40/month (Hetzner CX31 or DigitalOcean Droplet).
 
@@ -1831,8 +1826,8 @@ Triggered when pilot user count exceeds 50–100 users or a compliance audit req
 
 | Pilot Component | AWS Replacement | Reason |
 |---|---|---|
-| Docker container (API) | ECS Fargate or EC2 | Auto-scaling, CloudWatch, zero-downtime deploys |
-| Docker PostgreSQL | RDS PostgreSQL Multi-AZ | Automated backups, failover, point-in-time recovery |
+| systemd `tmjconnect-api` | ECS Fargate or EC2 | Auto-scaling, CloudWatch, zero-downtime deploys |
+| Host PostgreSQL | RDS PostgreSQL Multi-AZ | Automated backups, failover, point-in-time recovery |
 | Local file storage | S3 + CloudFront | Signed URLs (HIPAA), unlimited storage, global CDN |
 | Nginx SSL | ALB + ACM | Managed certificates, auto-renewal, WAF option |
 | Nginx static files | S3 + CloudFront | No server load, cache headers |
@@ -1844,7 +1839,7 @@ Triggered when pilot user count exceeds 50–100 users or a compliance audit req
 3. Update DNS to point to ALB IP. Zero-downtime with low TTL pre-migration.
 4. Decommission VPS after 7-day overlap period.
 
-No code changes required. The Docker image that ran on VPS runs unchanged on ECS.
+No application code changes required — the build output that ran under systemd on VPS runs unchanged as an ECS container (a narrow Dockerfile for the release artifact is reintroduced at this stage).
 
 ### 16.3 Nginx Configuration Highlights
 
@@ -1893,7 +1888,7 @@ server {
 | Requirement | Target | Mechanism |
 |---|---|---|
 | API response time | < 200ms p95 reads, < 500ms p95 writes | PostgreSQL indexes, connection pooling, Drizzle's thin query layer adds negligible overhead vs raw `pg` |
-| Availability | 99.5% pilot, 99.9% production | Docker restart policy (pilot), Multi-AZ RDS + ECS (production) |
+| Availability | 99.5% pilot, 99.9% production | systemd `Restart=on-failure` (pilot), Multi-AZ RDS + ECS (production) |
 | Data backup | Daily automated + before every deploy | `pg_dump` cron job (pilot), RDS automated snapshots (production) |
 | Backup restore verification | Monthly restore drill | Restore encrypted `pg_dump` to a test database and verify row counts match. Documented in `docs/RUNBOOK.md`. First drill before go-live. |
 | Concurrent users | 50 pilot, 5,000+ production | Single instance (pilot), ECS auto-scaling (production) |
@@ -2149,7 +2144,7 @@ Six 1-week sprints. Each sprint produces independently deployable and testable o
 - [ ] Patient re-linking after disconnect works (partial unique index)
 - [ ] HTML/script tags in free-text fields are stripped by sanitisation middleware
 - [ ] Stored XSS attempt in symptom notes — HTML stripped before storage, rendered as plain text in portal
-- [ ] Docker container runs as non-root user (USER node)
+- [ ] API runs as the unprivileged `tmjconnect` systemd user with `NoNewPrivileges=true` + filesystem sandboxing
 - [ ] Structured JSON logs include requestId on every entry
 - [ ] pino redact option strips password/token/code from log output
 - [ ] Idempotency key on report submission — duplicate POST returns original response
@@ -2167,7 +2162,7 @@ Six 1-week sprints. Each sprint produces independently deployable and testable o
 - [ ] CSRF: state-changing request without `X-Requested-With` header returns 403
 - [ ] Upload filenames are UUIDs — original client filename is not stored
 - [ ] Graceful shutdown: in-flight request completes after SIGTERM sent
-- [ ] Docker log rotation: container logs do not exceed 50 MB
+- [ ] journald retention configured so systemd-captured logs do not exceed bounded disk usage
 - [ ] Job advisory lock: concurrent job invocations do not overlap
 
 ### Admin
@@ -2282,14 +2277,14 @@ The following issues identified in the v2.0 review have been corrected in this d
 | **Connection pooling configured** | SE #7 | `pg.Pool` with explicit `max`, `idleTimeoutMillis`, `connectionTimeoutMillis`. Pilot vs production values. Added to Section 6.1. |
 | **Contract-first API types** | SE #8 | `packages/shared` structure documented with Zod schemas exported as the API contract. Frontend and backend share types — compilation fails on contract drift. (Section 5.3) |
 | **Immutability enforced at DB level** | SE #9 | `symptom_logs` 24-hour edit window enforced via `BEFORE UPDATE` trigger — not just route handler logic. (Section 6.7) |
-| **Least privilege (beyond DB)** | SE #10 | Docker non-root user, scoped S3 IAM policy, Firebase minimal permissions, GitHub Actions restricted permissions, VPS SSH hardening. (Section 14.9) |
+| **Least privilege (beyond DB)** | SE #10 | systemd unprivileged `tmjconnect` user with sandboxing, scoped S3 IAM policy, Firebase minimal permissions, GitHub Actions restricted permissions, VPS SSH hardening. (Section 14.9) |
 | **Observability & metrics** | SE #11 | Request metrics via pino-http, Sentry P0/P1/P2 alert tiers, production CloudWatch dashboard plan. (Section 14.10) |
 | **Coding principles expanded** | SE #12 | Added rules #11 (sanitise free-text), #12 (idempotent writes), #13 (structured logging). Updated rule #1 for DI container. Updated rule #4 and #6 for DI/stub patterns. |
 | **`LOG_LEVEL` env var added** | SE #13 | pino log level configuration. Default `info`. Set `debug` for SQL logging in dev. |
 | **Symptom log daily upsert** | SE #14 | One log per patient per day via `ON CONFLICT DO UPDATE` using natural deduplication. |
 | **`pino` and `isomorphic-dompurify` added to tech stack** | SE #15 | New dependencies documented in Section 2. |
 | **Sprint 1 updated** | SE #16 | Added `container.ts`, `logger.ts`, `sanitise.ts`, `requestLogger.ts`, shared schemas, test infrastructure to Sprint 1 deliverables. |
-| **Testing checklist expanded** | SE #17 | Added 10 new test items: sanitisation, XSS prevention, non-root Docker, structured logs, idempotency, DI stubs, DB trigger enforcement. |
+| **Testing checklist expanded** | SE #17 | Added 10 new test items: sanitisation, XSS prevention, systemd sandboxing, structured logs, idempotency, DI stubs, DB trigger enforcement. |
 
 ### Changes introduced in v3.4
 
@@ -2327,7 +2322,7 @@ Based on second external architecture review. 2 bugs fixed, 10 fixes applied, 4 
 | **UUID filenames for uploads** | Fix #9 | `multer` configured with `crypto.randomUUID()` filename generator. Original client filename is never used. Prevents path traversal and filename collisions. (Section 10.2) |
 | **Cursor-based pagination for mobile** | Fix #10 | `symptom_logs` and `notifications` use cursor-based pagination (`WHERE logged_at < :cursor`). Admin/dashboard tables remain offset-based. `parseCursorPagination()` utility added. (Section 15.4) |
 | **Graceful shutdown handler** | Fix #13 | SIGTERM handler in `index.ts`: stop accepting → drain in-flight (5s) → close pool → exit 0. Zero dropped requests on deploy. (Section 16.1) |
-| **Docker log rotation** | Fix #17 | `logging` block with `max-size: 10m`, `max-file: 5` on all Docker Compose services. Caps at 50 MB per container. (Section 16.1) |
+| **Log rotation** | Fix #17 | journald captures API stdout with bounded retention; nginx uses the distro `logrotate` package. (Section 16.1) |
 | **Migration rollback strategy** | Addition #14 | Fix-forward approach with pre-deploy `pg_dump` schema snapshots. Emergency rollback documented. (Section 6.1.2) |
 | **API documentation plan** | Addition #15 | Auto-generate OpenAPI 3.1 from `packages/shared` Zod schemas using `zod-to-openapi`. Added to Sprint 6. (Section 20) |
 | **Load testing plan** | Addition #16 | `k6` script against staging before go-live. 50 VUs, 5 minutes, p95 targets. Added to Sprint 6. (Section 20) |
@@ -2358,12 +2353,11 @@ This section documents material additions and deviations that exist in the codeb
 
 | Addition | Where | Notes |
 |---|---|---|
-| **Docker dev stack with HMR** | `docker/docker-compose.dev.yml` + `Dockerfile.dev` | Full dev environment in containers: postgres + postgres_test + api (ts-node-dev) + provider (Vite) + admin (Vite) + migrate init. Bind-mounted source, polling file watchers, named-volume `node_modules` per service. See `docs/DEV_STACK.md`. |
-| **Admin Dockerfile + compose service** | `apps/admin/Dockerfile`, admin-frontend service in prod compose | Mirrors provider's multi-stage build pattern. nginx mounts the built dist via named volume. |
-| **Migrate init service** | One-shot container gates API startup via `depends_on: service_completed_successfully` | Prod deploys always apply pending migrations before the API accepts traffic. |
-| **Bundled migrate script in prod image** | `ts-node` moved to dependencies; `scripts/` + `drizzle/` copied into the production image | `docker compose run migrate` works without a separate toolchain. |
-| **`.dockerignore` + `.env.example` hardened** | Root `.dockerignore`, `docker/.env.example` documents every required var | Prevents host `node_modules`, tests, docs, and secrets from leaking into image layers. |
-| **SPA build-arg `VITE_API_BASE_URL`** | Provider + admin Dockerfiles | Same image can target dev/staging/prod by rebuilding with a different arg. |
+| **Native dev stack with HMR** | See `docs/DEV_STACK.md` | Local Postgres + `ts-node-dev` (API) + Vite dev servers (provider + admin). No containers. |
+| **Admin SPA build output** | `apps/admin/dist/` served by nginx | Same Vite static-build pattern as the provider portal. |
+| **Migration step in deploy pipeline** | `npm run db:migrate --workspace=apps/api` runs before `systemctl restart tmjconnect-api` | Prod deploys always apply pending migrations before the API accepts traffic. |
+| **ts-node retained as a runtime dep** | `scripts/` + `drizzle/` shipped with the deployed tree | `npm run db:migrate` works in production without a separate toolchain. |
+| **SPA build-env `VITE_API_BASE_URL`** | Provider + admin build commands | Same source tree can target dev/staging/prod by rebuilding with a different env var. |
 
 #### Compliance upgrades (code now matches or exceeds spec)
 
@@ -2408,7 +2402,7 @@ This section documents material additions and deviations that exist in the codeb
 |---|---|
 | `docs/API_CHANGELOG.md` | Per-release endpoint + schema changes. Currently tracks v1.1.0 (provider portal features) and v1.2.0 (phone required at signup). |
 | `docs/openapi.yaml` + Swagger UI at `/docs` | OpenAPI 3.1 spec served by the API in dev. Spec §20 Sprint 6 #9 anticipated this; it now exists. |
-| `docs/DEV_STACK.md` | First-time + daily-use guide for the Docker dev stack. |
+| `docs/DEV_STACK.md` | First-time + daily-use guide for the native local dev stack. |
 | `docs/DEPLOYMENT.md` | Pilot + prod deployment guide with architecture diagram and runbooks. |
 | `docs/RUNBOOK.md` | Operational procedures (needs §14.8 incident-response cross-check per gap table above). |
 | `docs/SETUP_CHECKLIST.md` | Pre-go-live checklist. |

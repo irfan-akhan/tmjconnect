@@ -128,6 +128,20 @@ export const clinicalNotes = pgTable('clinical_notes', {
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`NOW()`),
 });
 
+// ─── clinic_visits ───────────────────────────────────────────────────────────────
+// In-clinic encounters between a provider and a linked patient. Recorded by
+// the provider (patients do not write here). Used to surface "last clinic
+// visit" context on patient-detail and report-detail screens. Migration 0012.
+export const clinicVisits = pgTable('clinic_visits', {
+  id: uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  patient_id: uuid('patient_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider_id: uuid('provider_id').references(() => users.id, { onDelete: 'set null' }),
+  visited_at: timestamp('visited_at', { withTimezone: true }).notNull(),
+  notes: text('notes'),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+});
+
 // ─── report_requests ─────────────────────────────────────────────────────────────
 // Provider-initiated nudge asking a patient to file a report. Fulfilled when the
 // patient submits a report linked back via fulfilled_report_id. Migration 0007.

@@ -1,33 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Cell,
 } from 'recharts';
 import { Activity, Dumbbell, TrendingUp, Minus } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-type PatientAnalytics = {
-  pain_trend: Array<{ date: string; pain_level: number }>;
-  pain_summary: { avg_pain: number; min_pain: number; max_pain: number; total_logs: number };
-  trigger_frequency: Array<{ trigger: string; count: number }>;
-  exercise_compliance: { completed: number; assigned: number; rate: number };
-  body_area_frequency: Array<{ area: string; count: number }>;
-  day_of_week: Array<{ day: string; avg_pain: number }>;
-};
-
-function usePatientAnalytics(patientId: string, days: number) {
-  return useQuery({
-    queryKey: ['patient-analytics', patientId, days],
-    queryFn: () =>
-      apiFetch<{ data: PatientAnalytics }>(`/providers/patients/${patientId}/analytics`, {
-        query: { days },
-      }).then((r) => r.data),
-    staleTime: 5 * 60_000,
-  });
-}
+import { usePatientAnalytics } from '@/features/patients/detail-queries';
 
 const RANGES = [
   { label: '7d', value: 7 },

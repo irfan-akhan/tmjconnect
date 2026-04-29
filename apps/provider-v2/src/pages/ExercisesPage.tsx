@@ -98,7 +98,7 @@ export function ExercisesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-8">
       <PageHeader
         eyebrow="Exercise library"
         title="Record once, prescribe forever."
@@ -270,8 +270,14 @@ function ExerciseCardItem({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  // TODO(api): exercise endpoint doesn't yet expose assignment count or completion %.
-  // Card shows category, duration, "Recorded by" + date as the meta line.
+  const completionLabel =
+    ex.completion_pct == null ? '—' : `${ex.completion_pct}% completion`;
+  const assignmentLabel =
+    ex.assignment_count === 0
+      ? 'Not assigned'
+      : ex.active_assignment_count === ex.assignment_count
+        ? `${ex.assignment_count} assigned`
+        : `${ex.active_assignment_count} active · ${ex.assignment_count} total`;
   return (
     <div className="group relative">
       <article className="flex flex-col overflow-hidden rounded-sm border border-border/70 bg-card shadow-navy-xs transition hover:-translate-y-0.5 hover:shadow-navy-sm">
@@ -306,9 +312,11 @@ function ExerciseCardItem({
             </p>
           )}
           <div className="mt-1 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            <span>Added {format(new Date(ex.created_at), 'd MMM yyyy')}</span>
-            {/* TODO(api): no assignment / completion stats yet */}
-            <span className="text-muted-foreground/60">— · — completion</span>
+            <span>{assignmentLabel}</span>
+            <span className="text-muted-foreground/80">{completionLabel}</span>
+          </div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+            Added {format(new Date(ex.created_at), 'd MMM yyyy')}
           </div>
         </div>
       </article>

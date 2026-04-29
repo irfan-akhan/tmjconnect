@@ -5,7 +5,7 @@ export type Logger = pino.Logger;
 /**
  * Creates a structured pino logger.
  *
- * - Production: plain JSON to stdout, parsed by Docker log aggregation.
+ * - Production: plain JSON to stdout, captured by the systemd journal.
  * - Development: pretty-printed with pino-pretty for human readability.
  * - HIPAA: redact sensitive fields from all log output. PHI values (notes, description)
  *   must never be passed to the logger directly.

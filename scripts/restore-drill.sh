@@ -17,12 +17,16 @@
 #   1 — configuration error (missing file, no backups)
 #   2 — restore failed (bad pipeline, corrupt backup)
 #   3 — row count mismatch (PHI-critical tables differ materially from live)
+#
+# Requires: psql, gpg, gunzip on the host. Connection is driven by standard
+# libpq env vars; the admin user below must have CREATEDB privileges.
 
 set -euo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-/opt/tmjconnect/backups}"
 PASSPHRASE_FILE="${PASSPHRASE_FILE:-/opt/tmjconnect/.backup_passphrase}"
-CONTAINER="${CONTAINER:-tmjconnect-postgres}"
+PGHOST="${PGHOST:-localhost}"
+PGPORT="${PGPORT:-5432}"
 DB_ADMIN="${DB_ADMIN:-postgres}"
 LIVE_DB="${LIVE_DB:-tmjconnect}"
 DRILL_DB="${DRILL_DB:-tmjconnect_drill}"
@@ -32,6 +36,8 @@ DRILL_DB="${DRILL_DB:-tmjconnect_drill}"
 TOLERANCE="${TOLERANCE:-100}"
 
 CRITICAL_TABLES=(users audit_logs symptom_logs reports patient_provider_links)
+
+PSQL=(psql -h "${PGHOST}" -p "${PGPORT}" -U "${DB_ADMIN}")
 
 # ─── Preflight ────────────────────────────────────────────────────────────────
 if [ ! -f "${PASSPHRASE_FILE}" ]; then
@@ -61,16 +67,15 @@ gpg --batch --decrypt --passphrase-file "${PASSPHRASE_FILE}" "${LATEST}" 2>/dev/
   }
 
 # Start fresh drill DB each run.
-docker exec "${CONTAINER}" psql -U "${DB_ADMIN}" -c "DROP DATABASE IF EXISTS ${DRILL_DB};" >/dev/null
-docker exec "${CONTAINER}" psql -U "${DB_ADMIN}" -c "CREATE DATABASE ${DRILL_DB};" >/dev/null
+"${PSQL[@]}" -c "DROP DATABASE IF EXISTS ${DRILL_DB};" >/dev/null
+"${PSQL[@]}" -c "CREATE DATABASE ${DRILL_DB};" >/dev/null
 
 # Pipe the SQL dump into psql. Errors here almost always indicate backup
 # corruption or a schema incompatibility (e.g. restoring an old dump after
 # a migration).
-if ! docker exec -i "${CONTAINER}" psql -U "${DB_ADMIN}" -d "${DRILL_DB}" \
-      --set ON_ERROR_STOP=on < "${TMP_SQL}" >/dev/null 2>&1; then
+if ! "${PSQL[@]}" -d "${DRILL_DB}" --set ON_ERROR_STOP=on -f "${TMP_SQL}" >/dev/null 2>&1; then
   echo "ERROR: Restore failed — check pg_dump compatibility with current Postgres version" >&2
-  docker exec "${CONTAINER}" psql -U "${DB_ADMIN}" -c "DROP DATABASE IF EXISTS ${DRILL_DB};" >/dev/null
+  "${PSQL[@]}" -c "DROP DATABASE IF EXISTS ${DRILL_DB};" >/dev/null
   exit 2
 fi
 
@@ -78,25 +83,23 @@ fi
 MISMATCH=0
 SUMMARY=""
 for table in "${CRITICAL_TABLES[@]}"; do
-  LIVE_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_ADMIN}" -d "${LIVE_DB}" \
-    -tAc "SELECT COUNT(*) FROM ${table};")
-  DRILL_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_ADMIN}" -d "${DRILL_DB}" \
-    -tAc "SELECT COUNT(*) FROM ${table};")
+  LIVE_COUNT=$("${PSQL[@]}" -d "${LIVE_DB}" -tAc "SELECT COUNT(*) FROM ${table};")
+  DRILL_COUNT=$("${PSQL[@]}" -d "${DRILL_DB}" -tAc "SELECT COUNT(*) FROM ${table};")
 
   DIFF=$(( LIVE_COUNT - DRILL_COUNT ))
   DIFF_ABS=${DIFF#-}
 
   if [ "${DIFF_ABS}" -gt "${TOLERANCE}" ]; then
-    echo "  ✗ ${table}: live=${LIVE_COUNT} drill=${DRILL_COUNT} diff=${DIFF} (exceeds tolerance=${TOLERANCE})"
+    echo "  x ${table}: live=${LIVE_COUNT} drill=${DRILL_COUNT} diff=${DIFF} (exceeds tolerance=${TOLERANCE})"
     MISMATCH=1
   else
-    echo "  ✓ ${table}: live=${LIVE_COUNT} drill=${DRILL_COUNT} diff=${DIFF}"
+    echo "  ok ${table}: live=${LIVE_COUNT} drill=${DRILL_COUNT} diff=${DIFF}"
   fi
   SUMMARY="${SUMMARY}${table}=${DRILL_COUNT}/${LIVE_COUNT} "
 done
 
 # ─── Teardown ─────────────────────────────────────────────────────────────────
-docker exec "${CONTAINER}" psql -U "${DB_ADMIN}" -c "DROP DATABASE ${DRILL_DB};" >/dev/null
+"${PSQL[@]}" -c "DROP DATABASE ${DRILL_DB};" >/dev/null
 
 # ─── Result ───────────────────────────────────────────────────────────────────
 if [ "${MISMATCH}" -ne 0 ]; then
@@ -108,5 +111,5 @@ fi
 echo "[$(date -Iseconds)] Drill passed"
 echo "SUMMARY: ${SUMMARY}"
 echo ""
-echo "Copy this line to docs/RUNBOOK.md § 2.3:"
+echo "Copy this line to docs/RUNBOOK.md 2.3:"
 echo "| $(date -I) | $(basename "${LATEST}") | YES | (measure manually) | (your name) |"

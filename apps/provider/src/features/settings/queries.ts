@@ -40,17 +40,10 @@ export type ProfileUpdate = Partial<{
 export async function uploadAvatar(file: File): Promise<{ key: string; url: string }> {
   const form = new FormData();
   form.append('file', file);
-  const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
-  const res = await fetch(`${BASE_URL}/uploads/avatar`, {
+  const payload = await apiFetch<{ data: { key: string; url: string } }>('/uploads/avatar', {
     method: 'POST',
-    credentials: 'include',
     body: form,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message ?? `Upload failed (${res.status})`);
-  }
-  const payload = await res.json();
   return payload.data;
 }
 

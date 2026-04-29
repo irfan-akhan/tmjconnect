@@ -13,6 +13,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Avatar, AvatarFallback, initials } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ import {
   useEmailInvite,
   useGenerateCode,
   useLinkingCodes,
+  useLinkingMetrics,
   useLinks,
   type LinkingCode,
   type PatientLink,
@@ -48,6 +50,7 @@ type Tab = 'active' | 'pending' | 'history';
 export function LinkingPage() {
   const codes = useLinkingCodes();
   const links = useLinks();
+  const metrics = useLinkingMetrics();
   const generate = useGenerateCode();
 
   const [tab, setTab] = useState<Tab>('active');
@@ -58,10 +61,6 @@ export function LinkingPage() {
   const pending = useMemo(() => allCodes.filter((c) => c.status === 'pending'), [allCodes]);
   const history = useMemo(() => allCodes.filter((c) => c.status !== 'pending'), [allCodes]);
   const allLinks = links.data ?? [];
-
-  const acceptedCount = allCodes.filter((c) => c.status === 'accepted').length;
-  const totalIssued = allCodes.length || 1;
-  const redemptionPct = Math.round((acceptedCount / totalIssued) * 100);
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
@@ -99,34 +98,36 @@ export function LinkingPage() {
       />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KpiCard
           label="Active links"
-          value={links.isLoading ? '—' : allLinks.length}
+          value={metrics.isLoading ? '—' : metrics.data?.active_count ?? allLinks.length}
           icon={<Users className="h-4 w-4" />}
           hint="Linked patients"
         />
         <KpiCard
           accent="gold"
           label="Pending · awaiting patient"
-          value={codes.isLoading ? '—' : pending.length}
+          value={metrics.isLoading ? '—' : metrics.data?.pending_count ?? pending.length}
           icon={<Mail className="h-4 w-4" />}
-          // TODO(api): no avg-redemption metric yet.
-          hint="Codes generated, not accepted"
+          hint={
+            metrics.data?.avg_redemption_hours == null
+              ? 'Codes issued, not yet accepted'
+              : `Avg redemption · ${metrics.data.avg_redemption_hours.toFixed(1)}h`
+          }
         />
         <KpiCard
           accent="ok"
           label="Redemption rate"
-          value={codes.isLoading ? '—' : `${redemptionPct}%`}
-          hint={`${acceptedCount} of ${allCodes.length || 0} accepted`}
+          value={metrics.isLoading ? '—' : `${metrics.data?.redemption_pct ?? 0}%`}
+          hint={`${metrics.data?.accepted_count ?? 0} of ${metrics.data?.total_codes ?? 0} accepted`}
         />
         <KpiCard
           accent="urgent"
           label="Disconnected · 30d"
-          // TODO(api): no historical disconnection count; treating as 0 for now.
-          value={0}
+          value={metrics.isLoading ? '—' : metrics.data?.disconnected_30d ?? 0}
           icon={<XCircle className="h-4 w-4" />}
-          hint="Most by patient request"
+          hint="Active links severed"
         />
       </div>
 
@@ -222,8 +223,13 @@ function ActiveConnections({
       key: 'consent',
       header: 'Consent scope',
       width: '160px',
-      // TODO(api): consent scope not exposed yet — treat as full clinical.
-      cell: () => <Badge variant="navy">Full clinical</Badge>,
+      cell: (l) => (
+        <Badge variant="navy">
+          {l.consent_scope === 'full_clinical'
+            ? 'Full clinical'
+            : l.consent_scope.replace(/_/g, ' ')}
+        </Badge>
+      ),
     },
     {
       key: 'status',
@@ -335,7 +341,7 @@ function CodeCard({ code, onInvite }: { code: LinkingCode; onInvite: () => void 
     <article className="overflow-hidden rounded-sm border border-border/70 bg-card shadow-navy-xs">
       {/* Code display block — navy gradient with gold borders */}
       <div className="bg-gradient-to-br from-navy-700 to-navy-900 p-6 text-background">
-        <div className="mb-4 font-mono text-[10px] uppercase tracking-[0.22em] text-gold-400/80">
+        <div className="mb-4 font-mono text-[10px] uppercase tracking-[0.22em] text-gold-300">
           6-character code · {expired ? 'expired' : `expires in ${formatDistanceToNowStrict(expires)}`}
         </div>
         <div className="flex justify-center gap-1.5">
@@ -348,7 +354,7 @@ function CodeCard({ code, onInvite }: { code: LinkingCode; onInvite: () => void 
             </span>
           ))}
         </div>
-        <div className="mt-4 flex items-center justify-center gap-4 font-mono text-[10px] uppercase tracking-[0.18em] text-background/70">
+        <div className="mt-4 flex items-center justify-center gap-4 font-mono text-[10px] uppercase tracking-[0.18em] text-background">
           <span className="inline-flex items-center gap-1.5">
             <Clock className="h-3 w-3" />
             Expires {format(expires, 'd MMM')}
@@ -371,11 +377,14 @@ function CodeCard({ code, onInvite }: { code: LinkingCode; onInvite: () => void 
 
       {showQr && (
         <div className="border-b border-border/70 bg-secondary/30 p-4">
-          {/* TODO(infra): replace external QR generator with local lib (qrcode.react) before launch. */}
-          <img
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(code.code)}`}
-            alt={`QR for ${code.code}`}
-            className="mx-auto h-40 w-40"
+          {/* Local QR generation: no PHI (just the 6-char code) leaves the browser. */}
+          <QRCodeSVG
+            value={code.code}
+            size={160}
+            bgColor="transparent"
+            fgColor="currentColor"
+            level="M"
+            className="mx-auto text-foreground"
           />
         </div>
       )}

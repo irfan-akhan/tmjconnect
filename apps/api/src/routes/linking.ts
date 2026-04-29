@@ -10,6 +10,7 @@ import * as EmailInvite from '../use-cases/linking/email-invite';
 import * as AcceptCode from '../use-cases/linking/accept-code';
 import * as Disconnect from '../use-cases/linking/disconnect';
 import * as ListLinks from '../use-cases/linking/list-links';
+import * as GetMetrics from '../use-cases/linking/get-metrics';
 
 export function linkingRouter(container: Container) {
   const router = Router();
@@ -41,6 +42,13 @@ export function linkingRouter(container: Container) {
   router.get('/codes', authorize('provider'), auditLog('linking_codes_viewed', 'linking_code'), async (req, res, next) => {
     try {
       res.json({ data: await ListCodes.execute(container, { providerId: req.user!.id }) });
+    } catch (err) { next(err); }
+  });
+
+  // ─── Provider: aggregate metrics for the linking dashboard ──────────────────
+  router.get('/metrics', authorize('provider'), auditLog('linking_metrics_viewed', 'linking_code'), async (req, res, next) => {
+    try {
+      res.json({ data: await GetMetrics.execute(container, { providerId: req.user!.id }) });
     } catch (err) { next(err); }
   });
 

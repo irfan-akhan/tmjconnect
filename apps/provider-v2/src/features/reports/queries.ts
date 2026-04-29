@@ -34,6 +34,9 @@ export type Report = {
   submitted_at: string;
   viewed_at: string | null;
   reviewed_at: string | null;
+  patient_first_name: string;
+  patient_last_name: string;
+  patient_avatar_url: string | null;
 };
 
 export type ReportResponse = {
@@ -50,6 +53,9 @@ export type InboxFilters = {
   limit: number;
   status?: ReportStatus;
   urgency?: ReportUrgency;
+  patient_id?: string;
+  from?: string; // ISO timestamp
+  to?: string;   // ISO timestamp
 };
 
 export function useInbox(filters: InboxFilters) {
@@ -64,10 +70,25 @@ export function useInbox(filters: InboxFilters) {
             limit: filters.limit,
             status: filters.status,
             urgency: filters.urgency,
+            patient_id: filters.patient_id,
+            from: filters.from,
+            to: filters.to,
           },
         },
       ),
     placeholderData: keepPreviousData,
+  });
+}
+
+/** Bulk-mark every still-submitted inbox report for the current provider as viewed. */
+export function useMarkAllInboxViewed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ data: { updated: number } }>('/reports/inbox/mark-viewed', {
+        method: 'PATCH',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports', 'inbox'] }),
   });
 }
 

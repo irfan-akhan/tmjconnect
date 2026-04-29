@@ -15,7 +15,7 @@ A HIPAA-compliant orofacial pain management platform connecting patients with pr
 7. [Environment Variables](#7-environment-variables)
 8. [Development Workflow](#8-development-workflow)
 9. [Testing](#9-testing)
-10. [Docker Deployment](#10-docker-deployment)
+10. [Deployment](#10-deployment)
 11. [Module Guide](#11-module-guide)
 12. [Security & HIPAA Compliance](#12-security--hipaa-compliance)
 13. [Sprint Status](#13-sprint-status)
@@ -143,14 +143,11 @@ tmjconnect/
 │       │       └── 0001_initial_schema.sql
 │       ├── drizzle.config.ts
 │       ├── jest.config.ts
-│       ├── Dockerfile
 │       └── package.json
 │
-└── docker/
-    ├── docker-compose.yml          # Production-like: api + postgres + nginx + certbot
-    ├── docker-compose.dev.yml      # Dev: postgres only (API runs locally)
-    ├── nginx.conf                  # TLS 1.2+, reverse proxy, /uploads serving
-    └── .env.example                # All required variables documented
+└── scripts/
+    ├── backup.sh                   # Nightly pg_dump | gzip | gpg encrypted backup
+    └── restore-drill.sh            # Monthly restore verification against a drill DB
 ```
 
 ---
@@ -213,9 +210,9 @@ tmjconnect/
 
 | Technology | Purpose |
 |---|---|
-| Docker Compose | Container orchestration (pilot / single-VPS deployment) |
-| Nginx 1.25 | Reverse proxy, TLS termination, `/uploads` static serving |
-| Certbot / Let's Encrypt | Automated SSL certificates |
+| systemd | Service supervision for the API process (pilot / single-VPS deployment) |
+| Nginx 1.25 | Reverse proxy, TLS termination, SPA static hosting, `/uploads` static serving |
+| Certbot / Let's Encrypt | Automated SSL certificates (apt package + `certbot.timer`) |
 
 ---
 
@@ -401,7 +398,7 @@ All authenticated endpoints require `Authorization: Bearer <access_token>`.
 ### Prerequisites
 
 - Node.js 20+ and npm 10+
-- Docker Desktop (for PostgreSQL)
+- PostgreSQL 16 running locally on `localhost:5432` (`brew install postgresql@16` / `apt install postgresql-16`)
 - A `.env` file (see [Environment Variables](#7-environment-variables))
 
 ### Step 1 — Clone and install dependencies
@@ -414,23 +411,25 @@ npm install
 
 This installs dependencies for all workspaces (`packages/shared` and `apps/api`) in a single command.
 
-### Step 2 — Start the development database
+### Step 2 — Create the development databases
 
 ```bash
-docker compose -f docker/docker-compose.dev.yml up -d
+psql postgres <<'SQL'
+CREATE ROLE tmjconnect WITH LOGIN PASSWORD 'dev_password';
+CREATE DATABASE tmjconnect      OWNER tmjconnect;
+CREATE DATABASE tmjconnect_test OWNER tmjconnect;
+SQL
 ```
 
-This starts two PostgreSQL 16 instances:
-
-| Instance | Host | Port | Database |
-|---|---|---|---|
-| Development | localhost | 5432 | `tmjconnect` |
-| Test | localhost | 5433 | `tmjconnect_test` |
+| Database | Host | Port |
+|---|---|---|
+| Development (`tmjconnect`) | localhost | 5432 |
+| Test (`tmjconnect_test`) | localhost | 5432 |
 
 ### Step 3 — Configure environment variables
 
 ```bash
-cp docker/.env.example apps/api/.env
+cp apps/api/.env.example apps/api/.env
 ```
 
 Edit `apps/api/.env` and set the required values. At minimum for local development:
@@ -448,9 +447,7 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8081
 ### Step 4 — Run database migrations
 
 ```bash
-cd apps/api
-DATABASE_URL=postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect \
-  npx drizzle-kit migrate
+npm run db:migrate --workspace=apps/api
 ```
 
 This applies `drizzle/migrations/0001_initial_schema.sql` which creates all 15 tables, triggers, indexes, and check constraints.
@@ -458,8 +455,8 @@ This applies `drizzle/migrations/0001_initial_schema.sql` which creates all 15 t
 For the test database:
 
 ```bash
-DATABASE_URL=postgresql://tmjconnect:test_password@localhost:5433/tmjconnect_test \
-  npx drizzle-kit migrate
+DATABASE_URL=postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect_test \
+  npm run db:migrate --workspace=apps/api
 ```
 
 ### Step 5 — Build the shared package
@@ -606,13 +603,13 @@ openssl rand -base64 32
 
 ### Test setup
 
-Tests use a real PostgreSQL database (`tmjconnect_test` on port 5433). There are no mocked DB queries — this catches real SQL errors, trigger violations, and constraint failures.
+Tests use a real PostgreSQL database (`tmjconnect_test` on your local Postgres instance). There are no mocked DB queries — this catches real SQL errors, trigger violations, and constraint failures.
 
 External services (email, SMS, push, storage) are replaced with in-memory stubs that record calls for assertion.
 
 ```bash
-# Make sure the dev docker stack is running
-docker compose -f docker/docker-compose.dev.yml up -d
+# Make sure your local Postgres is running and tmjconnect_test exists
+# (see Getting Started step 2)
 
 # Run all tests (serial — tests share the test DB)
 npm run test --workspace=apps/api
@@ -626,7 +623,7 @@ npm run test:watch --workspace=apps/api
 Create `apps/api/.env.test`:
 
 ```dotenv
-DATABASE_URL=postgresql://tmjconnect:test_password@localhost:5433/tmjconnect_test
+DATABASE_URL=postgresql://tmjconnect:dev_password@localhost:5432/tmjconnect_test
 JWT_SECRET=test-jwt-secret-at-least-32-characters-long
 JWT_REFRESH_SECRET=test-refresh-secret-at-least-32-chars
 MFA_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000001
@@ -691,72 +688,58 @@ describe('POST /api/v1/symptoms', () => {
 
 ---
 
-## 10. Docker Deployment
+## 10. Deployment
 
-### Development (local databases only)
+The pilot runs natively on a single VPS: Postgres + systemd-supervised API + nginx serving the SPA bundles as static files, with TLS terminated by nginx via Let's Encrypt.
 
-```bash
-# Start postgres + postgres_test
-docker compose -f docker/docker-compose.dev.yml up -d
+### Development
 
-# Stop
-docker compose -f docker/docker-compose.dev.yml down
-```
-
-### Pilot / Production (full stack)
-
-The production Compose file runs four containers: `postgres`, `api`, `nginx`, `certbot`.
-
-#### Initial deployment
+See [docs/DEV_STACK.md](docs/DEV_STACK.md) for the full local setup. The short version:
 
 ```bash
-# 1. Copy and fill in the env file
-cp docker/.env.example docker/.env
-nano docker/.env
-
-# 2. Obtain SSL certificates (first-time only)
-docker compose --env-file docker/.env run --rm certbot certonly \
-  --webroot -w /var/www/certbot -d api.tmjconnect.com
-
-# 3. Start all services
-docker compose --env-file docker/.env up -d
-
-# 4. Run database migrations
-docker compose --env-file docker/.env exec api \
-  node -e "require('./dist/db/migrate')"
-
-# 5. Verify health
-curl https://api.tmjconnect.com/health
+npm install
+npm run build --workspace=packages/shared
+npm run db:migrate --workspace=apps/api
+npm run dev:api        # in one terminal
+npm run dev:provider   # in another
+npm run dev:admin      # in another
 ```
 
-#### Common operations
+### Pilot / Production
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full first-time host bootstrap, systemd unit, nginx vhost templates, and certbot setup. Rough shape:
 
 ```bash
-# View live API logs
-docker compose logs -f api
+# On the VPS, as a non-root user with sudo
+sudo apt install -y nginx postgresql-16 certbot python3-certbot-nginx
+sudo -u tmjconnect git clone <repo> /opt/tmjconnect
+cd /opt/tmjconnect
+sudo -u tmjconnect npm ci
+sudo -u tmjconnect npm run build --workspace=packages/shared
+sudo -u tmjconnect npm run build --workspace=apps/api
+sudo -u tmjconnect npm run build --workspace=apps/provider
+sudo -u tmjconnect npm run build --workspace=apps/admin
 
-# Reload nginx after config change
-docker compose exec nginx nginx -s reload
+# systemd unit reads /etc/tmjconnect/api.env (chmod 640, owner root:tmjconnect)
+sudo systemctl enable --now tmjconnect-api
 
-# Renew SSL certificates (Certbot container does this automatically every 12h)
-docker compose run --rm certbot renew
-
-# Deploy a new API version
-docker compose --env-file docker/.env pull api
-docker compose --env-file docker/.env up -d api
-
-# Force rebuild from source
-docker compose --env-file docker/.env up --build -d api
+# nginx vhosts for api / provider / admin subdomains, then:
+sudo certbot --nginx -d api.tmjconnect.com -d provider.tmjconnect.com -d admin.tmjconnect.com
 ```
 
-#### Dockerfile overview
+Rolling deploys:
 
-The API image uses a two-stage build:
+```bash
+cd /opt/tmjconnect
+sudo -u tmjconnect git pull
+sudo -u tmjconnect npm ci
+sudo -u tmjconnect npm run build  # builds all workspaces
+sudo -u tmjconnect bash -c 'set -a; source /etc/tmjconnect/api.env; set +a; \
+  npm run db:migrate --workspace=apps/api'
+sudo systemctl restart tmjconnect-api
+```
 
-1. **Builder** (`node:20-alpine`): Installs all dependencies, builds `packages/shared`, then `apps/api`. Output is in `dist/`.
-2. **Production** (`node:20-alpine`): Copies only the built output and production dependencies. Runs as the non-root `node` user. Exposes port 3000.
-
-The image includes a `HEALTHCHECK` that polls `/health` every 30 seconds.
+Backups are handled by [scripts/backup.sh](scripts/backup.sh) (nightly cron, encrypted `pg_dump | gzip | gpg`) and verified monthly by [scripts/restore-drill.sh](scripts/restore-drill.sh).
 
 ---
 
@@ -958,7 +941,7 @@ Every request body is validated by Zod before it reaches a route handler. Valida
 
 ### Sprint 1 — Foundation + Auth ✅
 
-All 15 auth endpoints, complete database schema + migrations, all utility and middleware layers, Docker configuration, and test infrastructure.
+All 15 auth endpoints, complete database schema + migrations, all utility and middleware layers, and test infrastructure.
 
 ### Sprint 2 — Patient Core ✅
 
@@ -989,7 +972,7 @@ Patient profile CRUD, session management, symptom logs (upsert + cursor paginati
 - `EXPLAIN ANALYZE` on critical queries
 - `docs/RUNBOOK.md` — deploy, backup, restore, incident response
 - `docs/API_CHANGELOG.md`
-- GitHub Actions CI/CD: test → build Docker image → push GHCR → SSH deploy
+- GitHub Actions CI/CD: test → build artifacts → SSH deploy (rsync `dist/` + `systemctl restart`)
 - OpenAPI 3.1 spec auto-generated from `packages/shared` schemas (served at `/docs` in dev)
 - k6 load test: 50 VUs, 5 min, assert p95 < 200ms reads / 500ms writes
 

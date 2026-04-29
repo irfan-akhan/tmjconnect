@@ -264,49 +264,56 @@ function templates(appUrl: string) {
 // ─── Service factory ──────────────────────────────────────────────────────────────
 
 /**
- * Creates the email service.
- * If RESEND_API_KEY is absent in development: logs to console (stub mode).
- * If RESEND_API_KEY is absent in production: throws on any send attempt.
+ * Creates the email service backed by Twilio SendGrid.
+ * If SENDGRID_API_KEY is absent in development: logs to console (stub mode).
+ * If SENDGRID_API_KEY is absent in production: throws on any send attempt.
  */
 export function createEmailService(env: Env, logger: Logger): EmailService {
   const isProduction = env.NODE_ENV === 'production';
   const appUrl = env.APP_URL;
 
-  if (!env.RESEND_API_KEY) {
+  if (!env.SENDGRID_API_KEY) {
     if (isProduction) {
-      logger.error('RESEND_API_KEY is required in production. Email service will throw on use.');
+      logger.error('SENDGRID_API_KEY is required in production. Email service will throw on use.');
     } else {
-      logger.warn('[EmailService] RESEND_API_KEY not set — running in stub mode (console output).');
+      logger.warn('[EmailService] SENDGRID_API_KEY not set — running in stub mode (console output).');
     }
   }
 
-  // Lazy import Resend to avoid errors when API key is absent in development.
-  let resendInstance: import('resend').Resend | null = null;
-  if (env.RESEND_API_KEY) {
+  // Lazy import SendGrid to avoid errors when API key is absent in development.
+  // The SDK's CJS export is the singleton itself, not a `.default` wrapper.
+  let sgMail: typeof import('@sendgrid/mail') | null = null;
+  if (env.SENDGRID_API_KEY) {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { Resend } = require('resend') as typeof import('resend');
-    resendInstance = new Resend(env.RESEND_API_KEY);
+    sgMail = require('@sendgrid/mail') as typeof import('@sendgrid/mail');
+    sgMail.setApiKey(env.SENDGRID_API_KEY);
   }
 
+  // SendGrid requires the `from` address to be verified (Single Sender or
+  // domain-authenticated). Configurable per environment so test and prod can
+  // use different verified senders.
+  const fromAddress = env.SENDGRID_FROM ?? 'TMJConnect <noreply@mail.tmjconnect.com>';
   const tmpl = templates(appUrl);
   const breaker = createCircuitBreaker('email', logger);
 
   async function send(to: string, subject: string, html: string): Promise<void> {
-    if (!resendInstance) {
-      if (isProduction) throw new Error('Email service not configured: RESEND_API_KEY missing.');
+    if (!sgMail) {
+      if (isProduction) throw new Error('Email service not configured: SENDGRID_API_KEY missing.');
       logger.info({ to, subject }, '[EmailService stub] Email would be sent');
       return;
     }
 
     await breaker.execute(async () => {
-      const result = await resendInstance!.emails.send({
-        from: 'TMJConnect <noreply@mail.tmjconnect.com>',
-        to,
-        subject,
-        html,
-      });
-      if ('error' in result && result.error) {
-        throw new Error(`Resend error: ${result.error.message}`);
+      try {
+        await sgMail!.send({ from: fromAddress, to, subject, html });
+      } catch (err: unknown) {
+        // SendGrid errors carry a `response.body.errors[]` array with detail.
+        // Surface the first message for actionable logs without leaking PII.
+        const message =
+          (err as { response?: { body?: { errors?: Array<{ message?: string }> } } })
+            ?.response?.body?.errors?.[0]?.message ??
+          (err instanceof Error ? err.message : 'Unknown SendGrid error');
+        throw new Error(`SendGrid error: ${message}`);
       }
     });
   }
@@ -314,6 +321,11 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
   return {
     async sendVerifyEmail(to, code) {
       const { subject, html } = tmpl.verifyEmail(code);
+      // Dev-only: surface the plaintext code so you can self-verify without a
+      // real email provider. Stripped from prod output by the !isProduction guard.
+      if (!sgMail && !isProduction) {
+        logger.info({ to, code }, '[EmailService stub] Verify code (dev only)');
+      }
       await send(to, subject, html);
     },
     async sendWelcome(to, firstName) {

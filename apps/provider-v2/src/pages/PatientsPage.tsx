@@ -164,9 +164,12 @@ export function PatientsPage() {
       key: 'trend',
       header: '14-day trend',
       width: '160px',
-      // TODO(api): patient list endpoint doesn't expose daily pain time-series yet —
-      // sparkline renders the empty state. Add when /providers/patients returns history.
-      cell: () => <Sparkline data={[]} height={32} />,
+      cell: (p) => (
+        <Sparkline
+          data={(p.daily_pain_14d ?? []).map((d) => d.pain_level)}
+          height={32}
+        />
+      ),
     },
     {
       key: 'status',
@@ -207,7 +210,7 @@ export function PatientsPage() {
       />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KpiCard
           label="Total patients"
           value={total || '—'}
@@ -323,7 +326,9 @@ export function PatientsPage() {
           total={total}
           onPageChange={setPage}
           onRowClick={(p) => navigate(`/patients/${p.patient_id}`)}
-          rowClassName={(p) => ((p.avg_pain_7d ?? 0) >= 7 ? 'bg-err/5 hover:bg-err/10' : undefined)}
+          rowClassName={(p) =>
+            (p.avg_pain_7d ?? 0) >= 7 ? 'bg-err/10 hover:bg-err/15' : undefined
+          }
         />
       )}
     </div>

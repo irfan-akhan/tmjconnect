@@ -48,6 +48,13 @@ import {
   type ProviderProfile,
   type Session,
 } from '@/features/settings/queries';
+import {
+  useNotificationPreferences,
+  useUpdateNotificationPreferences,
+} from '@/features/settings/notification-prefs-queries';
+import { useBilling } from '@/features/settings/billing-queries';
+import { useAcceptTos, useTosStatus } from '@/features/settings/legal-queries';
+import { Section } from '@/components/ui/section';
 
 type SectionKey =
   | 'profile'
@@ -64,16 +71,14 @@ const SECTIONS: Array<{
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   group: 'account' | 'support' | 'danger';
-  // TODO(api): mark stub-only sections.
-  stub?: boolean;
 }> = [
   { key: 'profile', label: 'Profile', icon: User, group: 'account' },
   { key: 'security', label: 'Security & sessions', icon: Lock, group: 'account' },
   { key: 'activity', label: 'Activity log', icon: ActivityIcon, group: 'account' },
-  { key: 'notifications', label: 'Notifications', icon: Bell, group: 'account', stub: true },
-  { key: 'billing', label: 'Billing & plan', icon: CreditCard, group: 'account', stub: true },
+  { key: 'notifications', label: 'Notifications', icon: Bell, group: 'account' },
+  { key: 'billing', label: 'Billing & plan', icon: CreditCard, group: 'account' },
   { key: 'help', label: 'Help & support', icon: HelpCircle, group: 'support' },
-  { key: 'legal', label: 'Legal & documents', icon: FileText, group: 'support', stub: true },
+  { key: 'legal', label: 'Legal & documents', icon: FileText, group: 'support' },
   { key: 'danger', label: 'Delete account', icon: Trash2, group: 'danger' },
 ];
 
@@ -88,7 +93,7 @@ export function SettingsPage() {
       : 'Provider';
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-8">
       <PageHeader
         eyebrow="Account"
         title="Settings."
@@ -138,11 +143,6 @@ export function SettingsPage() {
               <h2 className="font-serif text-2xl tracking-tightest text-foreground">
                 {sectionMeta.label}
               </h2>
-              {sectionMeta.stub && (
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-warn-dark">
-                  Coming soon · API not yet wired
-                </p>
-              )}
             </div>
             {section === 'security' && (
               <Badge variant="improving" size="md">
@@ -157,10 +157,10 @@ export function SettingsPage() {
           )}
           {section === 'security' && <SecuritySection />}
           {section === 'activity' && <ActivitySection />}
-          {section === 'notifications' && <NotificationsStub />}
-          {section === 'billing' && <BillingStub />}
+          {section === 'notifications' && <NotificationsSection />}
+          {section === 'billing' && <BillingSection />}
           {section === 'help' && <HelpStub />}
-          {section === 'legal' && <LegalStub />}
+          {section === 'legal' && <LegalSection />}
           {section === 'danger' && <DangerSection />}
         </main>
       </div>
@@ -466,7 +466,7 @@ function ProfileForm({ profile }: { profile: ProviderProfile }) {
 
       {/* Sticky save bar */}
       {dirty && (
-        <div className="sticky bottom-4 z-10 flex items-center justify-between rounded-sm border border-gold-600/40 bg-card p-3 shadow-navy-md">
+        <div className="sticky bottom-4 z-10 flex items-center justify-between rounded-sm border border-gold-600/40 bg-card p-3 shadow-navy-sm">
           <span className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-warn-dark">
             <span className="h-1.5 w-1.5 rounded-full bg-gold-600" />
             You have unsaved changes
@@ -840,27 +840,262 @@ function ActivitySection() {
   );
 }
 
-// ─── Stub sections ────────────────────────────────────────────────────────
+// ─── Notifications section (real, wired to /notifications/preferences) ──
 
-function NotificationsStub() {
+function NotificationsSection() {
+  const prefs = useNotificationPreferences();
+  const update = useUpdateNotificationPreferences();
+
+  if (prefs.isLoading || !prefs.data) {
+    return <Skeleton className="h-72" />;
+  }
+  const p = prefs.data;
+  const toggle = (k: keyof typeof p) =>
+    update.mutate({ [k]: !p[k] } as Partial<typeof p>);
+
   return (
-    <Card title="Notification preferences">
-      <p className="text-sm text-muted-foreground">
-        Channel preferences (in-app, email, SMS) and per-urgency thresholds will live here. Backend
-        endpoint not yet built — flagged for a future sprint.
-      </p>
+    <Card
+      title="Notification preferences"
+      subtitle="Choose what reaches you and where. Email digest cadence applies to non-urgent updates."
+    >
+      <ul className="divide-y divide-border/60">
+        <ToggleRow
+          title="Exercise reminders"
+          meta="Pushed when a patient misses 2+ assigned exercise days."
+          checked={p.exercise_reminders}
+          onToggle={() => toggle('exercise_reminders')}
+          disabled={update.isPending}
+        />
+        <ToggleRow
+          title="Symptom check-in"
+          meta="Daily nudge if you have unread symptom logs from active patients."
+          checked={p.symptom_checkin}
+          onToggle={() => toggle('symptom_checkin')}
+          disabled={update.isPending}
+        />
+        <ToggleRow
+          title="Provider messages"
+          meta="In-app messages from patients and other providers on shared cases."
+          checked={p.provider_messages}
+          onToggle={() => toggle('provider_messages')}
+          disabled={update.isPending}
+        />
+        <ToggleRow
+          title="Report updates"
+          meta="A patient submits a new report or replies to one of yours."
+          checked={p.report_updates}
+          onToggle={() => toggle('report_updates')}
+          disabled={update.isPending}
+        />
+        <ToggleRow
+          title="Tips & product updates"
+          meta="Occasional clinical tips and product release notes."
+          checked={p.tips_updates}
+          onToggle={() => toggle('tips_updates')}
+          disabled={update.isPending}
+        />
+      </ul>
+      <div className="mt-6 border-t border-border/60 pt-5">
+        <Field label="Email digest cadence">
+          <select
+            value={p.email_digest}
+            onChange={(e) =>
+              update.mutate({ email_digest: e.target.value as typeof p.email_digest })
+            }
+            disabled={update.isPending}
+            className="block w-full rounded-sm border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-gold-600"
+          >
+            <option value="instant">Instant — email per event</option>
+            <option value="daily">Daily — once each morning</option>
+            <option value="weekly">Weekly — Monday morning</option>
+            <option value="off">Off — no email digests</option>
+          </select>
+        </Field>
+      </div>
     </Card>
   );
 }
 
-function BillingStub() {
+function ToggleRow({
+  title,
+  meta,
+  checked,
+  onToggle,
+  disabled,
+}: {
+  title: string;
+  meta: string;
+  checked: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <Card title="Billing & plan">
-      <p className="text-sm text-muted-foreground">
-        Plan tier, invoice list, and payment method will live here. The provider product is
-        currently free during pilot — no billing endpoint to wire yet.
-      </p>
-    </Card>
+    <li className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
+      <div className="min-w-0 flex-1">
+        <div className="font-serif text-sm tracking-tightest text-foreground">{title}</div>
+        <div className="text-xs text-muted-foreground">{meta}</div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={onToggle}
+        disabled={disabled}
+        className={cn(
+          'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
+          checked ? 'bg-navy-600' : 'bg-secondary',
+        )}
+      >
+        <span
+          className={cn(
+            'inline-block h-4 w-4 transform rounded-full bg-background transition-transform',
+            checked ? 'translate-x-4' : 'translate-x-0.5',
+          )}
+        />
+      </button>
+    </li>
+  );
+}
+
+// ─── Billing section ────────────────────────────────────────────────────
+
+function BillingSection() {
+  const billing = useBilling();
+  if (billing.isLoading || !billing.data) return <Skeleton className="h-72" />;
+  const { plan, payment_method, invoices } = billing.data;
+
+  const tierLabel = plan.tier.charAt(0).toUpperCase() + plan.tier.slice(1);
+  const monthly =
+    plan.monthly_price_cents === 0
+      ? 'Free'
+      : `$${(plan.monthly_price_cents / 100).toFixed(2)} / mo`;
+
+  return (
+    <div className="space-y-6">
+      <Card
+        title="Current plan"
+        subtitle="Your subscription tier and billing cycle. Pilot accounts are free during onboarding."
+      >
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Tier
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="font-serif text-2xl tracking-tightest text-foreground">
+                {tierLabel}
+              </span>
+              <Badge variant={plan.status === 'active' ? 'improving' : 'moderate'}>
+                {plan.status}
+              </Badge>
+            </div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Price
+            </div>
+            <div className="mt-1 font-serif text-2xl tracking-tightest text-foreground">
+              {monthly}
+            </div>
+          </div>
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              {plan.current_period_end ? 'Renews' : 'Started'}
+            </div>
+            <div className="mt-1 font-serif text-base tracking-tightest text-foreground">
+              {plan.current_period_end
+                ? format(new Date(plan.current_period_end), 'd MMM yyyy')
+                : format(new Date(plan.started_at), 'd MMM yyyy')}
+            </div>
+          </div>
+        </div>
+        {plan.tier === 'pilot' && (
+          <p className="mt-5 rounded-sm border-l-2 border-gold-600 bg-gold-100/40 px-3 py-2 text-xs text-foreground">
+            You're on the free pilot. We'll reach out before any paid tier is required.
+          </p>
+        )}
+      </Card>
+
+      <Card
+        title="Payment method"
+        action={
+          <Button variant="outline" size="sm" disabled>
+            {payment_method ? 'Change card' : 'Add card'}
+          </Button>
+        }
+      >
+        {payment_method ? (
+          <p className="text-sm text-foreground">
+            {payment_method.brand.toUpperCase()} ·••• {payment_method.last4} · expires{' '}
+            {payment_method.exp_month}/{payment_method.exp_year}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No payment method on file. Not required while you're on the pilot tier.
+          </p>
+        )}
+      </Card>
+
+      <Card title="Invoices">
+        {invoices.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No invoices yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/70 bg-secondary/30">
+                <th className="px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                  Date
+                </th>
+                <th className="px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                  Status
+                </th>
+                <th className="px-3 py-2 text-right font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                  Amount
+                </th>
+                <th className="px-3 py-2 text-right font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground" />
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv) => (
+                <tr key={inv.id} className="border-b border-border/40 last:border-b-0">
+                  <td className="px-3 py-3 font-mono text-xs text-foreground">
+                    {format(new Date(inv.issued_at), 'd MMM yyyy')}
+                  </td>
+                  <td className="px-3 py-3">
+                    <Badge
+                      variant={
+                        inv.status === 'paid'
+                          ? 'improving'
+                          : inv.status === 'open'
+                            ? 'moderate'
+                            : 'inactive'
+                      }
+                    >
+                      {inv.status}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-xs text-foreground">
+                    ${(inv.amount_cents / 100).toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    {inv.pdf_url && (
+                      <a
+                        href={inv.pdf_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono text-[10px] uppercase tracking-[0.22em] text-gold-700 hover:text-gold-800"
+                      >
+                        PDF
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -878,14 +1113,83 @@ function HelpStub() {
   );
 }
 
-function LegalStub() {
+// ─── Legal section (real, wired to /auth/tos/current + /auth/tos/accept) ──
+
+function LegalSection() {
+  const status = useTosStatus();
+  const accept = useAcceptTos();
+  if (status.isLoading || !status.data) return <Skeleton className="h-48" />;
+  const t = status.data;
   return (
-    <Card title="Legal & documents">
-      <p className="text-sm text-muted-foreground">
-        Terms of service, privacy policy, and BAA download links will live here. Document API not
-        yet built — flagged for legal review and a future sprint.
-      </p>
-    </Card>
+    <div className="space-y-6">
+      <Card
+        title="Terms of Service"
+        subtitle={`Current version ${t.current_version} · published ${format(new Date(t.published_at), 'd MMM yyyy')}`}
+        action={
+          t.accepted ? (
+            <Badge variant="improving">
+              <CheckCircle2 className="h-3 w-3" />
+              Accepted
+            </Badge>
+          ) : (
+            <Button
+              size="sm"
+              disabled={accept.isPending}
+              onClick={() => accept.mutate(t.current_version)}
+            >
+              {accept.isPending ? 'Recording…' : 'Accept current version'}
+            </Button>
+          )
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          {t.accepted_at
+            ? `You accepted version ${t.accepted_version ?? '—'} on ${format(new Date(t.accepted_at), 'd MMM yyyy · HH:mm')}.`
+            : 'You have not yet accepted the current Terms of Service.'}
+        </p>
+        {!t.accepted && t.accepted_version && (
+          <p className="mt-2 rounded-sm border-l-2 border-warn bg-warn/5 px-3 py-2 text-xs text-warn-dark">
+            A new version is available. Re-accept to continue using PHI-touching
+            features after the next gating window.
+          </p>
+        )}
+      </Card>
+
+      <Card title="Documents">
+        <ul className="space-y-2 text-sm">
+          <li>
+            <a
+              href="https://tmjconnect.com/legal/tos"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-foreground hover:underline"
+            >
+              Terms of Service ({t.current_version})
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://tmjconnect.com/legal/privacy"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-foreground hover:underline"
+            >
+              Privacy Policy
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://tmjconnect.com/legal/baa"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-foreground hover:underline"
+            >
+              Business Associate Agreement (BAA)
+            </a>
+          </li>
+        </ul>
+      </Card>
+    </div>
   );
 }
 
@@ -985,19 +1289,9 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section
-      id={id}
-      className="rounded-sm border border-border/70 bg-card p-5 shadow-navy-xs"
-    >
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-serif text-lg tracking-tightest text-foreground">{title}</h3>
-          {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
-        </div>
-        {action}
-      </div>
+    <Section id={id} title={title} subtitle={subtitle} action={action}>
       {children}
-    </section>
+    </Section>
   );
 }
 

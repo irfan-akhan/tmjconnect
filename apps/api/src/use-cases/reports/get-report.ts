@@ -4,6 +4,7 @@ import {
   getReportForPatient,
   getReportResponsesForPatient,
   getReportForProvider,
+  getReportWithPatientForProvider,
   getReportResponsesForProvider,
   markReportViewed,
 } from '../../db/queries/reports.queries';
@@ -27,15 +28,19 @@ export async function execute(deps: Deps, input: GetReportInput) {
     return { report, responses };
   }
 
-  // Provider path: includes internal_notes, auto-marks as viewed.
-  let report = await getReportForProvider(db, input.reportId, user);
-  if (!report) throw new AppError(404, 'NOT_FOUND', 'Report not found.');
+  // Provider path: includes internal_notes, auto-marks as viewed, joins
+  // patient profile so the detail view can render name + initials.
+  // Use the lighter (no-join) read for the existence check + status update,
+  // then re-read with the join to return.
+  const ownership = await getReportForProvider(db, input.reportId, user);
+  if (!ownership) throw new AppError(404, 'NOT_FOUND', 'Report not found.');
 
-  if (report.status === 'submitted') {
+  if (ownership.status === 'submitted') {
     await markReportViewed(db, input.reportId);
-    // Re-read to return the actual DB state.
-    report = (await getReportForProvider(db, input.reportId, user))!;
   }
+
+  const report = await getReportWithPatientForProvider(db, input.reportId, user);
+  if (!report) throw new AppError(404, 'NOT_FOUND', 'Report not found.');
 
   const responses = await getReportResponsesForProvider(db, input.reportId);
   return { report, responses };

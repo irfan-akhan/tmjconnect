@@ -19,7 +19,27 @@ export type PatientLink = {
   first_name: string;
   last_name: string;
   linked_at: string;
+  consent_scope: string;
+  diagnosis: string | null;
 };
+
+export type LinkingMetrics = {
+  active_count: number;
+  pending_count: number;
+  accepted_count: number;
+  total_codes: number;
+  redemption_pct: number;
+  disconnected_30d: number;
+  avg_redemption_hours: number | null;
+};
+
+export function useLinkingMetrics() {
+  return useQuery({
+    queryKey: ['linking', 'metrics'],
+    queryFn: () =>
+      apiFetch<{ data: LinkingMetrics }>('/linking/metrics').then((r) => r.data),
+  });
+}
 
 export function useLinkingCodes() {
   return useQuery({

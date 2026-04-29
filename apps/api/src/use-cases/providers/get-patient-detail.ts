@@ -10,7 +10,7 @@ export async function execute(deps: Deps, input: GetPatientDetailInput) {
   const linked = await verifyProviderLink(deps.db, input.providerId, input.patientId);
   if (!linked) throw new AppError(403, 'FORBIDDEN', 'Patient is not linked to your account.');
 
-  const patient = await getPatientDetail(deps.db, input.patientId);
+  const patient = await getPatientDetail(deps.db, input.providerId, input.patientId);
   if (!patient) throw new AppError(404, 'NOT_FOUND', 'Patient not found.');
   return patient;
 }

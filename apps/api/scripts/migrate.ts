@@ -9,7 +9,14 @@
  * Usage:
  *   DATABASE_URL=postgresql://... npm run db:migrate
  */
-import 'dotenv/config';
+// Mirror the env-loading rules in src/config/env.ts:
+//   .env.${NODE_ENV} first (e.g. .env.development), then .env as a fallback.
+// First write wins, so the env-specific file overrides .env.
+import * as dotenv from 'dotenv';
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+dotenv.config({ path: `.env.${nodeEnv}` });
+dotenv.config({ path: '.env' });
+
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
