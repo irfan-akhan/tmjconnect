@@ -100,6 +100,25 @@ async function bootstrap() {
     const YAML = require('yamljs');
     const specPath = path.resolve(__dirname, '../../../docs/openapi.yaml');
     const spec = YAML.load(specPath);
+    // Temporary docs-only CSP override.
+    // Remove or tighten this once the initial rollout is finished and Swagger UI
+    // is either disabled again in production or served with a stricter policy.
+    app.use(
+      '/docs',
+      helmet.contentSecurityPolicy({
+        directives: {
+          defaultSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:'],
+          styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          fontSrc: ["'self'", 'https:', 'data:'],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          frameAncestors: ["'self'"],
+        },
+      }),
+    );
     app.use('/docs', swaggerUi.serve, swaggerUi.setup(spec, {
       customSiteTitle: 'TMJConnect API Docs',
       customCss: '.swagger-ui .topbar { display: none }',
