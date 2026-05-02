@@ -80,25 +80,10 @@ async function bootstrap() {
   });
 
   // ─── CORS ──────────────────────────────────────────────────────────────────────
-  const allowedOrigins = env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? [];
-  const enforceCorsAllowlist = allowedOrigins.length > 0;
   app.use(
     cors({
-      origin: (origin, callback) => {
-        // Temporary rollout mode: if ALLOWED_ORIGINS is not set, allow all origins.
-        // TODO: Remove this branch and enforce allowlist-only once all clients are final.
-        if (!enforceCorsAllowlist) {
-          callback(null, true);
-          return;
-        }
-
-        // Allow requests with no origin (mobile apps, curl, etc.).
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error(`Origin ${origin} not allowed by CORS`));
-        }
-      },
+      // Intentionally open for rollout: reflect any Origin and allow non-browser clients.
+      origin: true,
       credentials: true,
       methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     }),
