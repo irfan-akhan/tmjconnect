@@ -57,8 +57,10 @@ const envSchema = z.object({
   // 32-byte hex string (64 chars). AES-256-GCM key for encrypting TOTP secrets.
   MFA_ENCRYPTION_KEY: z.string().length(64, 'MFA_ENCRYPTION_KEY must be exactly 64 hex characters'),
 
-  // ─── CORS (required) ─────────────────────────────────────────────────────────
-  ALLOWED_ORIGINS: z.string().min(1, 'ALLOWED_ORIGINS must be a comma-separated list of origins'),
+  // ─── CORS (temporarily optional during initial rollout) ─────────────────────
+  // TODO: Re-enable strict validation by making this required again once all
+  // production clients/subdomains are finalized.
+  ALLOWED_ORIGINS: z.string().min(1, 'ALLOWED_ORIGINS must be a comma-separated list of origins').optional(),
 
   // ─── Email — Twilio SendGrid (optional in dev, required in prod) ────────────
   SENDGRID_API_KEY: z.string().optional(),
