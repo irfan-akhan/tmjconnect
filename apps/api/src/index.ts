@@ -40,17 +40,38 @@ async function bootstrap() {
   // ─── Trust proxy (required for correct req.ip behind Nginx/ALB) ─────────────────
   app.set('trust proxy', 1);
 
+  // ─── Swagger UI (always enabled across all environments) ──────────────────────
+  const swaggerUi = require('swagger-ui-express');
+  const YAML = require('yamljs');
+  const specPath = path.resolve(__dirname, '../../../docs/openapi.yaml');
+  const spec = YAML.load(specPath);
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(spec, {
+    customSiteTitle: 'TMJConnect API Docs',
+    customCss: '.swagger-ui .topbar { display: none }',
+  }));
+  logger.info('Swagger UI available at /docs');
+
   // ─── Security headers ──────────────────────────────────────────────────────────
-  app.use(
-    helmet({
-      contentSecurityPolicy: true,
-      crossOriginEmbedderPolicy: true,
-      hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
-      noSniff: true,
-      frameguard: { action: 'deny' },
-      xssFilter: true,
-    }),
-  );
+  const securityHeaders = helmet({
+    contentSecurityPolicy: true,
+    crossOriginEmbedderPolicy: true,
+    hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
+    noSniff: true,
+    frameguard: { action: 'deny' },
+    xssFilter: true,
+  });
+
+  app.use((req, res, next) => {
+    // Temporary rollout exception so Swagger UI can load all required assets.
+    // TODO: Re-enable strict Helmet headers for /docs once docs are protected
+    // behind auth or disabled again in production.
+    if (req.path.startsWith('/docs')) {
+      next();
+      return;
+    }
+
+    securityHeaders(req, res, next);
+  });
 
   // ─── CORS ──────────────────────────────────────────────────────────────────────
   const allowedOrigins = env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? [];
@@ -93,33 +114,6 @@ async function bootstrap() {
 
   // ─── Attach db + logger to req for audit middleware ─────────────────────────────
   app.use(attachDb(db, logger));
-
-  // ─── Swagger UI (gated by ENABLE_DOCS) ───────────────────────────────────────
-  if (env.ENABLE_DOCS) {
-    const swaggerUi = require('swagger-ui-express');
-    const YAML = require('yamljs');
-    const specPath = path.resolve(__dirname, '../../../docs/openapi.yaml');
-    const spec = YAML.load(specPath);
-    // Temporary docs-only security override.
-    // Remove this once the initial rollout is finished and Swagger UI is either
-    // disabled again in production or served with a stricter, tested policy.
-    app.use(
-      '/docs',
-      (_req, res, next) => {
-        res.removeHeader('Content-Security-Policy');
-        res.removeHeader('Cross-Origin-Embedder-Policy');
-        res.removeHeader('Cross-Origin-Opener-Policy');
-        res.removeHeader('Cross-Origin-Resource-Policy');
-        res.removeHeader('Origin-Agent-Cluster');
-        next();
-      },
-    );
-    app.use('/docs', swaggerUi.serve, swaggerUi.setup(spec, {
-      customSiteTitle: 'TMJConnect API Docs',
-      customCss: '.swagger-ui .topbar { display: none }',
-    }));
-    logger.info('Swagger UI available at /docs');
-  }
 
   // ─── Health check (unauthenticated, no rate limit bypass needed) ────────────────
   app.get('/health', async (_req, res) => {
