@@ -45,7 +45,13 @@ async function bootstrap() {
   const YAML = require('yamljs');
   const specPath = path.resolve(__dirname, '../../../docs/openapi.yaml');
   const spec = YAML.load(specPath);
-  app.use('/docs', swaggerUi.serve, swaggerUi.setup(spec, {
+  app.get('/docs/openapi.json', (_req, res) => {
+    res.type('application/json').send(spec);
+  });
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(null, {
+    swaggerOptions: {
+      url: '/docs/openapi.json',
+    },
     customSiteTitle: 'TMJConnect API Docs',
     customCss: '.swagger-ui .topbar { display: none }',
   }));
