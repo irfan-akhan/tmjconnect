@@ -13,6 +13,8 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Container } from '../../config/container';
 import { auditLogs } from '../../db/schema';
 import { getActivityEventConfig } from '../../utils/activity-event-map';
+import { parseDevice } from '../../utils/parse-device';
+import { lookupLocations } from '../../utils/lookup-location';
 
 type Deps = Pick<Container, 'db'>;
 
@@ -63,14 +65,20 @@ export async function execute(deps: Deps, input: ListActivityInput) {
     .limit(input.limit + 1)
     .offset(input.offset);
 
-  const items = rows.slice(0, input.limit).map((r) => {
+  const visible = rows.slice(0, input.limit);
+  const locations = await lookupLocations(visible.map((r) => r.ip_address ? String(r.ip_address) : null));
+
+  const items = visible.map((r) => {
     const eventConfig = getActivityEventConfig(r.action);
+    const ip = r.ip_address ? String(r.ip_address) : null;
     return {
       ...r,
       title: eventConfig.title,
       category: eventConfig.category,
       status: eventConfig.status,
-      ip_address: r.ip_address ? String(r.ip_address) : null,
+      device: parseDevice(r.user_agent),
+      location: ip ? (locations.get(ip) ?? 'Unknown') : 'Unknown',
+      ip_address: ip,
       created_at: r.created_at instanceof Date
         ? r.created_at.toISOString()
         : r.created_at,
