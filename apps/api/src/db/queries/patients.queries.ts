@@ -2,7 +2,7 @@
  * Reusable patient queries used across patient routes.
  * All queries scope to a specific userId to prevent PHI leakage.
  */
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, gt } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import {
@@ -96,7 +96,7 @@ export async function getActiveSessions(db: Db['db'], userId: string) {
       created_at: sessions.created_at,
     })
     .from(sessions)
-    .where(eq(sessions.user_id, userId))
+    .where(and(eq(sessions.user_id, userId), gt(sessions.expires_at, sql`NOW()`)))
     .orderBy(desc(sessions.last_active));
 }
 
@@ -105,11 +105,33 @@ export async function deleteSessionById(
   sessionId: string,
   userId: string,
 ): Promise<boolean> {
-  const result = await db
-    .delete(sessions)
+  // Get the session's device_info before deleting, so we can also revoke
+  // refresh tokens for that device (prevents the device from refreshing back in).
+  const [session] = await db
+    .select({ id: sessions.id, device_info: sessions.device_info })
+    .from(sessions)
     .where(and(eq(sessions.id, sessionId), eq(sessions.user_id, userId)))
-    .returning({ id: sessions.id });
-  return result.length > 0;
+    .limit(1);
+
+  if (!session) return false;
+
+  await db.delete(sessions).where(eq(sessions.id, session.id));
+
+  // Revoke all active refresh tokens for this user+device
+  if (session.device_info) {
+    await db
+      .update(refreshTokens)
+      .set({ revoked_at: sql`NOW()` })
+      .where(
+        and(
+          eq(refreshTokens.user_id, userId),
+          eq(refreshTokens.device_info, session.device_info),
+          isNull(refreshTokens.revoked_at),
+        ),
+      );
+  }
+
+  return true;
 }
 
 // ─── Notification preferences ──────────────────────────────────────────────────────

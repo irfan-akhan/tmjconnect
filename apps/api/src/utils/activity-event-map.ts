@@ -8,7 +8,7 @@
 
 export type ActivityCategory = 'auth' | 'security' | 'account' | 'success' | 'failure' | 'view' | 'create' | 'update' | 'delete' | 'admin';
 
-export type ActivityStatus = 'success' | 'failed' | 'neutral';
+export type ActivityStatus = 'success' | 'failed' | 'info';
 
 export interface ActivityEventConfig {
   title: string;
@@ -48,13 +48,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'auth.logout': {
     title: 'Signed out',
     category: 'auth',
-    status: 'neutral',
+    status: 'info',
     description: 'Logged out from this device',
   },
   'auth.logout_all': {
     title: 'Signed out everywhere',
     category: 'security',
-    status: 'neutral',
+    status: 'info',
     description: 'Logged out from all devices',
   },
   'auth.password_reset': {
@@ -66,7 +66,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'auth.password_reset_requested': {
     title: 'Password reset requested',
     category: 'account',
-    status: 'neutral',
+    status: 'info',
     description: 'Password reset email sent',
   },
   'auth.password_reset_code_verified': {
@@ -90,13 +90,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'auth.mfa_init': {
     title: '2FA setup started',
     category: 'security',
-    status: 'neutral',
+    status: 'info',
     description: 'Two-factor authentication setup initiated',
   },
   'auth.mfa_setup_started': {
     title: '2FA configuration started',
     category: 'security',
-    status: 'neutral',
+    status: 'info',
     description: 'MFA setup in progress',
   },
   'auth.mfa_enabled': {
@@ -108,7 +108,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'auth.mfa_disabled': {
     title: 'Two-factor authentication disabled',
     category: 'account',
-    status: 'neutral',
+    status: 'info',
     description: '2FA turned off',
   },
   'auth.mfa_verify': {
@@ -126,7 +126,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'auth.email_change_requested': {
     title: 'Email change requested',
     category: 'account',
-    status: 'neutral',
+    status: 'info',
     description: 'New email verification sent',
   },
   'auth.email_change_verified': {
@@ -148,13 +148,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'session_revoked': {
     title: 'Session ended',
     category: 'security',
-    status: 'neutral',
+    status: 'info',
     description: 'Session was terminated',
   },
   'admin_session_terminated': {
     title: 'Session terminated (admin)',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Session ended by administrator',
   },
 
@@ -192,7 +192,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'link_disconnected': {
     title: 'Account unlinked',
     category: 'account',
-    status: 'neutral',
+    status: 'info',
     description: 'Disconnected from provider',
   },
   'provider_updated_patient_link': {
@@ -214,13 +214,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'symptom_logs_viewed': {
     title: 'Symptom history viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Viewed symptom logs',
   },
   'symptom_log_viewed': {
     title: 'Symptom entry viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Opened symptom log detail',
   },
   'symptom_log_updated': {
@@ -232,31 +232,31 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'symptom_log_deleted': {
     title: 'Symptom entry deleted',
     category: 'delete',
-    status: 'neutral',
+    status: 'info',
     description: 'Removed symptom log',
   },
   'symptom_stats_viewed': {
     title: 'Symptom statistics viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked symptom analytics',
   },
   'symptom_calendar_viewed': {
     title: 'Symptom calendar viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Viewed monthly symptom calendar',
   },
   'symptom_insights_viewed': {
     title: 'Symptom insights viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked symptom insights',
   },
   'symptom_correlation_viewed': {
     title: 'Symptom correlation viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Analyzed symptom correlations',
   },
 
@@ -266,7 +266,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'patient_viewed_assignments': {
     title: 'Exercise assignments viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Viewed active exercises',
   },
   'exercise_completed': {
@@ -278,7 +278,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_viewed_patient_assignments': {
     title: 'Patient assignments viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Viewed patient exercise assignments',
   },
   'assignment_created': {
@@ -296,13 +296,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'assignment_deleted': {
     title: 'Assignment removed',
     category: 'delete',
-    status: 'neutral',
+    status: 'info',
     description: 'Exercise assignment deleted',
   },
   'provider_exercises_viewed': {
     title: 'Exercise library viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Browsed exercise catalog',
   },
   'exercise_created': {
@@ -320,7 +320,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'exercise_deleted': {
     title: 'Exercise deleted',
     category: 'delete',
-    status: 'neutral',
+    status: 'info',
     description: 'Exercise removed from library',
   },
 
@@ -336,7 +336,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'report_viewed': {
     title: 'Report viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Opened report detail',
   },
   'report_responded': {
@@ -360,7 +360,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_viewed_report_inbox': {
     title: 'Report inbox viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked incoming reports',
   },
   'provider_marked_inbox_viewed': {
@@ -372,13 +372,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'patient_viewed_own_reports': {
     title: 'Your reports viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked submitted reports',
   },
   'report_requests_listed': {
     title: 'Report requests viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Viewed pending report requests',
   },
   'report_request_created': {
@@ -390,13 +390,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'report_request_dismissed': {
     title: 'Report request dismissed',
     category: 'update',
-    status: 'neutral',
+    status: 'info',
     description: 'Report request archived',
   },
   'provider_viewed_patient_reports': {
     title: 'Patient reports viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed patient reports',
   },
   'report_created_on_behalf': {
@@ -412,7 +412,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_listed_notes': {
     title: 'Clinical notes viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed clinical notes',
   },
   'clinical_note_created': {
@@ -430,13 +430,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'clinical_note_deleted': {
     title: 'Clinical note deleted',
     category: 'delete',
-    status: 'neutral',
+    status: 'info',
     description: 'Removed clinical note',
   },
   'provider_viewed_last_clinic_visit': {
     title: 'Clinic visit history viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked last clinic visit',
   },
   'provider_recorded_clinic_visit': {
@@ -458,13 +458,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'mobility_list_viewed': {
     title: 'Mobility history viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked jaw mobility logs',
   },
   'mobility_trend_viewed': {
     title: 'Mobility trend viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Analyzed mobility trends',
   },
   'medication_logged': {
@@ -476,13 +476,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'medication_list_viewed': {
     title: 'Medication history viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked medication logs',
   },
   'medication_correlation_viewed': {
     title: 'Medication correlation viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Analyzed medication correlations',
   },
   'sleep_logged': {
@@ -494,13 +494,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'sleep_list_viewed': {
     title: 'Sleep history viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked sleep logs',
   },
   'sleep_correlation_viewed': {
     title: 'Sleep correlation viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Analyzed sleep correlations',
   },
 
@@ -510,7 +510,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'reminders_viewed': {
     title: 'Reminders viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked reminders',
   },
   'reminder_created': {
@@ -528,7 +528,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'reminder_deleted': {
     title: 'Reminder deleted',
     category: 'delete',
-    status: 'neutral',
+    status: 'info',
     description: 'Reminder removed',
   },
 
@@ -544,13 +544,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'intake_forms_listed': {
     title: 'Intake forms viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Browsed intake forms',
   },
   'intake_form_viewed': {
     title: 'Intake form viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Opened intake form',
   },
   'intake_form_updated': {
@@ -562,7 +562,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'intake_form_deleted': {
     title: 'Intake form deleted',
     category: 'delete',
-    status: 'neutral',
+    status: 'info',
     description: 'Removed intake form',
   },
   'intake_form_assigned': {
@@ -574,13 +574,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'intake_responses_viewed': {
     title: 'Intake responses viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed intake responses',
   },
   'patient_intake_assignments_viewed': {
     title: 'Intake assignments viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked pending intake forms',
   },
   'intake_response_submitted': {
@@ -602,7 +602,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'support_tickets_viewed': {
     title: 'Support tickets viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked support requests',
   },
 
@@ -612,31 +612,31 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'patient_dashboard_viewed': {
     title: 'Dashboard viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Accessed patient dashboard',
   },
   'patient_profile_viewed': {
     title: 'Profile viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Viewed profile settings',
   },
   'patient_sessions_viewed': {
     title: 'Active sessions viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked logged-in devices',
   },
   'patient_activity_viewed': {
     title: 'Activity log viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed account activity',
   },
   'patient_notification_prefs_viewed': {
     title: 'Notification preferences viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked notification settings',
   },
   'patient_data_exported': {
@@ -652,37 +652,37 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_dashboard_viewed': {
     title: 'Dashboard viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Accessed provider dashboard',
   },
   'provider_analytics_viewed': {
     title: 'Analytics viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed analytics',
   },
   'provider_profile_viewed': {
     title: 'Profile viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Viewed profile settings',
   },
   'provider_billing_viewed': {
     title: 'Billing information viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked billing details',
   },
   'provider_sessions_viewed': {
     title: 'Active sessions viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked logged-in devices',
   },
   'provider_activity_viewed': {
     title: 'Activity log viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed activity history',
   },
 
@@ -692,31 +692,31 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_listed_patients': {
     title: 'Patient list viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Browsed patient list',
   },
   'provider_viewed_patient_detail': {
     title: 'Patient detail viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Opened patient profile',
   },
   'provider_viewed_patient_symptoms': {
     title: 'Patient symptoms viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed patient symptom logs',
   },
   'provider_viewed_patient_analytics': {
     title: 'Patient analytics viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Analyzed patient data',
   },
   'provider_listed_report_requests': {
     title: 'Report requests viewed',
     category: 'view',
-    status: 'neutral',
+    status: 'info',
     description: 'Checked pending report requests',
   },
 
@@ -726,19 +726,19 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'admin_viewed_analytics': {
     title: 'Platform analytics viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed system analytics',
   },
   'admin_listed_users': {
     title: 'User list viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Browsed all users',
   },
   'admin_viewed_user': {
     title: 'User detail viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed user profile',
   },
   'admin_user_updated': {
@@ -750,7 +750,7 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'admin_viewed_audit_logs': {
     title: 'Audit logs viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed system audit trail',
   },
   'admin_audit_export': {
@@ -762,13 +762,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'admin_viewed_login_events': {
     title: 'Login events viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed login history',
   },
   'admin_viewed_all_reports': {
     title: 'All reports viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed system reports',
   },
   'admin_outbox_retried': {
@@ -792,31 +792,31 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'admin_viewed_provider_performance': {
     title: 'Provider performance viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed provider metrics',
   },
   'admin_viewed_patient_engagement': {
     title: 'Patient engagement viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Analyzed patient engagement',
   },
   'admin_viewed_security_summary': {
     title: 'Security summary viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed security metrics',
   },
   'admin_viewed_phi_access_by_actor': {
     title: 'PHI access by user viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed user PHI access logs',
   },
   'admin_viewed_phi_access_by_resource': {
     title: 'PHI access by resource viewed',
     category: 'admin',
-    status: 'neutral',
+    status: 'info',
     description: 'Reviewed resource-level PHI access',
   },
 
@@ -832,7 +832,7 @@ export function getActivityEventConfig(action: string): ActivityEventConfig {
     ACTIVITY_EVENT_MAP[action] ?? {
       title: action.replace(/[._]/g, ' '),
       category: 'auth' as const,
-      status: 'neutral' as const,
+      status: 'info' as const,
       description: undefined,
     }
   );

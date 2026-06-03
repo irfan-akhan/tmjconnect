@@ -2,7 +2,7 @@
  * auth.queries.ts — All database interactions for the auth module.
  * This layer only reads and writes data. No business logic, no AppErrors.
  */
-import { eq, and, sql, isNull, desc } from 'drizzle-orm';
+import { eq, and, ne, sql, isNull, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import {
   users,
@@ -301,12 +301,22 @@ export async function insertTokenPair(
       ip_address: ip,
       expires_at: refreshExpiresAt,
     });
-    await tx.insert(sessions).values({
-      user_id: userId,
-      device_info: deviceInfo,
-      ip_address: ip,
-      expires_at: sessionExpiresAt,
-    });
+
+    // Upsert session: reuse existing session for same user+device, or create new.
+    const existingSession = await tx
+      .update(sessions)
+      .set({ last_active: sql`NOW()`, ip_address: ip, expires_at: sessionExpiresAt })
+      .where(and(eq(sessions.user_id, userId), eq(sessions.device_info, deviceInfo)))
+      .returning({ id: sessions.id });
+
+    if (existingSession.length === 0) {
+      await tx.insert(sessions).values({
+        user_id: userId,
+        device_info: deviceInfo,
+        ip_address: ip,
+        expires_at: sessionExpiresAt,
+      });
+    }
   });
 }
 
@@ -353,12 +363,23 @@ export async function rotateRefreshTokenTransaction(
       ip_address: ip,
       expires_at: refreshExpiresAt,
     });
-    await tx.insert(sessions).values({
-      user_id: userId,
-      device_info: deviceInfo,
-      ip_address: ip,
-      expires_at: sessionExpiresAt,
-    });
+
+    // Upsert session: update existing session for this user+device, or create one.
+    const existingSession = await tx
+      .update(sessions)
+      .set({ last_active: sql`NOW()`, ip_address: ip, expires_at: sessionExpiresAt })
+      .where(and(eq(sessions.user_id, userId), eq(sessions.device_info, deviceInfo)))
+      .returning({ id: sessions.id });
+
+    if (existingSession.length === 0) {
+      await tx.insert(sessions).values({
+        user_id: userId,
+        device_info: deviceInfo,
+        ip_address: ip,
+        expires_at: sessionExpiresAt,
+      });
+    }
+
     return { rotated: true };
   });
 }
@@ -402,18 +423,44 @@ export async function findRefreshTokenByHash(db: DbClient, tokenHash: string) {
  * revokeRefreshTokenByHash — Soft-revokes a single refresh token (used by
  * logout). The row stays so a subsequent replay attempt is still detected as
  * "revoked", not "unknown". Pruned by codeExpiryJob after expires_at passes.
+ * Also deletes the matching session so it no longer appears in "active sessions".
  */
-export async function revokeRefreshTokenByHash(db: DbClient, tokenHash: string): Promise<void> {
-  await db
+export async function revokeRefreshTokenAndDeleteSession(db: DbClient, tokenHash: string): Promise<void> {
+  const [revoked] = await db
     .update(refreshTokens)
     .set({ revoked_at: sql`NOW()` })
-    .where(and(eq(refreshTokens.token_hash, tokenHash), isNull(refreshTokens.revoked_at)));
+    .where(and(eq(refreshTokens.token_hash, tokenHash), isNull(refreshTokens.revoked_at)))
+    .returning({ user_id: refreshTokens.user_id, device_info: refreshTokens.device_info });
+
+  if (revoked?.user_id && revoked?.device_info) {
+    await db
+      .delete(sessions)
+      .where(and(eq(sessions.user_id, revoked.user_id), eq(sessions.device_info, revoked.device_info)));
+  }
 }
 
-export async function deleteAllTokensAndSessions(db: DbClient, userId: string) {
+export async function deleteAllTokensAndSessions(db: DbClient, userId: string, exceptDeviceInfo?: string) {
   await db.transaction(async (tx) => {
-    await tx.delete(refreshTokens).where(eq(refreshTokens.user_id, userId));
-    await tx.delete(sessions).where(eq(sessions.user_id, userId));
+    if (exceptDeviceInfo) {
+      // Revoke (not delete) tokens for other devices so replay detection still works
+      await tx
+        .update(refreshTokens)
+        .set({ revoked_at: sql`NOW()` })
+        .where(
+          and(
+            eq(refreshTokens.user_id, userId),
+            ne(refreshTokens.device_info, exceptDeviceInfo),
+            isNull(refreshTokens.revoked_at),
+          ),
+        );
+      // Delete sessions for other devices only
+      await tx
+        .delete(sessions)
+        .where(and(eq(sessions.user_id, userId), ne(sessions.device_info, exceptDeviceInfo)));
+    } else {
+      await tx.delete(refreshTokens).where(eq(refreshTokens.user_id, userId));
+      await tx.delete(sessions).where(eq(sessions.user_id, userId));
+    }
   });
 }
 

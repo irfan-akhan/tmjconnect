@@ -99,6 +99,11 @@ export const resetPasswordConfirmSchema = z.object({
   new_password: passwordSchema,
 });
 
+// ─── Password-only schema for state-based reset token (mobile OTP flow) ────────
+export const resetPasswordNewPasswordSchema = z.object({
+  new_password: passwordSchema,
+});
+
 // ─── Resend Verify Email ──────────────────────────────────────────────────────────
 export const resendVerifyEmailSchema = z.object({
   email: z.string().email().toLowerCase(),

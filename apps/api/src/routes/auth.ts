@@ -310,8 +310,8 @@ export function authRouter(container: Container) {
 
   router.delete('/logout-all', authenticate, auditLog('auth.logout_all'), async (req, res, next) => {
     try {
-      await LogoutAll.execute(container, { userId: req.user!.id });
-      res.json({ message: 'Logged out from all devices.' });
+      await LogoutAll.execute(container, { userId: req.user!.id, currentDeviceInfo: extractDeviceInfo(req) });
+      res.json({ message: 'Logged out from all other devices.' });
     } catch (err) { next(err); }
   });
 
