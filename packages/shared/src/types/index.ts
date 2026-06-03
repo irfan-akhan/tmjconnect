@@ -10,6 +10,8 @@ import {
   refreshSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  resetPasswordVerifySchema,
+  resetPasswordConfirmSchema,
   changePasswordSchema,
   resendVerifyEmailSchema,
   fcmTokenSchema,
@@ -47,6 +49,8 @@ export type MfaSmsInput = z.infer<typeof mfaSmsSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type ResetPasswordVerifyInput = z.infer<typeof resetPasswordVerifySchema>;
+export type ResetPasswordConfirmInput = z.infer<typeof resetPasswordConfirmSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type ResendVerifyEmailInput = z.infer<typeof resendVerifyEmailSchema>;
 export type FcmTokenInput = z.infer<typeof fcmTokenSchema>;

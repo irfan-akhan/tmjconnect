@@ -15,6 +15,7 @@ import {
   LOCKOUT_MAX_ATTEMPTS,
   LOCKOUT_WINDOW_MINUTES,
   EMAIL_VERIFY_MAX_ATTEMPTS,
+  PASSWORD_RESET_OTP_MAX_ATTEMPTS,
   EMAIL_VERIFY_TTL_HOURS,
 } from '../config/constants';
 
@@ -189,7 +190,16 @@ export function createAuthLimiters(pool: Pool) {
     blockDuration: 0,
   });
 
-  return { loginLimiter, emailVerifyLimiter };
+  const passwordResetVerifyLimiter = new RateLimiterPostgres({
+    ...base,
+    tableName: 'rl_reset_code',
+    keyPrefix: 'reset_code',
+    points: PASSWORD_RESET_OTP_MAX_ATTEMPTS,
+    duration: 15 * 60,
+    blockDuration: 0,
+  });
+
+  return { loginLimiter, emailVerifyLimiter, passwordResetVerifyLimiter };
 }
 
 export type AuthLimiters = ReturnType<typeof createAuthLimiters>;

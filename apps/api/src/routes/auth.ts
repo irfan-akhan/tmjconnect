@@ -15,6 +15,8 @@ import {
   refreshSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  resetPasswordVerifySchema,
+  resetPasswordConfirmSchema,
   resendVerifyEmailSchema,
   changePasswordSchema,
   acceptTosSchema,
@@ -35,6 +37,8 @@ import * as SendSmsMfa from '../use-cases/auth/send-sms-mfa';
 import * as RefreshToken from '../use-cases/auth/refresh-token';
 import * as ForgotPassword from '../use-cases/auth/forgot-password';
 import * as ResetPassword from '../use-cases/auth/reset-password';
+import * as VerifyPasswordResetCode from '../use-cases/auth/verify-password-reset-code';
+import * as ConfirmPasswordReset from '../use-cases/auth/confirm-password-reset';
 import * as ResendVerifyEmail from '../use-cases/auth/resend-verify-email';
 import * as Logout from '../use-cases/auth/logout';
 import * as LogoutAll from '../use-cases/auth/logout-all';
@@ -51,7 +55,7 @@ function extractDeviceInfo(req: { headers: Record<string, string | string[] | un
 
 export function authRouter(container: Container) {
   const router = Router();
-  const { loginLimiter, emailVerifyLimiter } = createAuthLimiters(container.pool);
+  const { loginLimiter, emailVerifyLimiter, passwordResetVerifyLimiter } = createAuthLimiters(container.pool);
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // PATIENT AUTH FLOW
@@ -248,7 +252,37 @@ export function authRouter(container: Container) {
     async (req, res, next) => {
       try {
         await ForgotPassword.execute(container, { email: req.body.email });
-        res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+        res.json({ message: 'If an account with that email exists, a reset code has been sent.' });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.post(
+    '/reset-password/verify',
+    validate(resetPasswordVerifySchema),
+    auditLog('auth.password_reset_code_verified'),
+    async (req, res, next) => {
+      try {
+        const result = await VerifyPasswordResetCode.execute(
+          { ...container, passwordResetVerifyLimiter },
+          { email: req.body.email, code: req.body.code },
+        );
+        res.json({ data: result });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.post(
+    '/reset-password/confirm',
+    validate(resetPasswordConfirmSchema),
+    auditLog('auth.password_reset_confirmed'),
+    async (req, res, next) => {
+      try {
+        await ConfirmPasswordReset.execute(container, {
+          reset_token: req.body.reset_token,
+          new_password: req.body.new_password,
+        });
+        res.json({ message: 'Password reset successfully. Please log in with your new password.' });
       } catch (err) { next(err); }
     },
   );

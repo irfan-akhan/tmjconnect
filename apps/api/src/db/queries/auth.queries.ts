@@ -2,7 +2,7 @@
  * auth.queries.ts — All database interactions for the auth module.
  * This layer only reads and writes data. No business logic, no AppErrors.
  */
-import { eq, and, sql, isNull } from 'drizzle-orm';
+import { eq, and, sql, isNull, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import {
   users,
@@ -449,6 +449,34 @@ export async function findPasswordResetByHash(db: DbClient, tokenHash: string) {
     .where(eq(passwordResets.token_hash, tokenHash))
     .limit(1);
   return row ?? null;
+}
+
+export async function findLatestActivePasswordResetByUserId(db: DbClient, userId: string) {
+  const [row] = await db
+    .select({
+      id: passwordResets.id,
+      user_id: passwordResets.user_id,
+      token_hash: passwordResets.token_hash,
+      used: passwordResets.used,
+      expires_at: passwordResets.expires_at,
+    })
+    .from(passwordResets)
+    .where(and(eq(passwordResets.user_id, userId), eq(passwordResets.used, false)))
+    .orderBy(desc(passwordResets.created_at))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function rotatePasswordResetToSessionToken(
+  db: DbClient,
+  resetId: string,
+  tokenHash: string,
+  expiresAt: Date,
+) {
+  await db
+    .update(passwordResets)
+    .set({ token_hash: tokenHash, expires_at: expiresAt })
+    .where(and(eq(passwordResets.id, resetId), eq(passwordResets.used, false)));
 }
 
 export async function consumePasswordResetTransaction(

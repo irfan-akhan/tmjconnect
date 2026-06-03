@@ -42,6 +42,8 @@ tags:
     description: Provider-recorded in-clinic encounters
   - name: Admin
     description: User management, audit logs, broadcasts, feature flags, scheduled reports, jobs, system metrics
+  - name: Support
+    description: Patient/provider support ticket submission and history
 
 components:
   securitySchemes:
@@ -175,6 +177,7 @@ components:
         phone: { type: [string, "null"] }
         role: { type: string, enum: [patient] }
         is_active: { type: boolean }
+        email_verified: { type: boolean, description: "Whether the patient has verified their email address" }
         mfa_enabled: { type: boolean, description: "Whether patient has opted into MFA" }
         created_at: { type: string, format: date-time }
         first_name: { type: string }
@@ -234,9 +237,11 @@ components:
       required: [id, device_info, last_active, created_at]
       properties:
         id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid, description: "Owner of this session" }
         device_info: { type: string, description: "User-Agent string (truncated to 500 chars)" }
         ip_address: { type: [string, "null"], description: "Client IP address" }
         last_active: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, description: "When the session expires" }
         created_at: { type: string, format: date-time }
 
     # ─── Symptoms ──────────────────────────────────────────────────────────────
@@ -359,6 +364,7 @@ components:
         title: { type: string }
         body: { type: string }
         read: { type: boolean }
+        read_at: { type: [string, "null"], format: date-time, description: "Timestamp when the notification was marked read" }
         data:
           $ref: '#/components/schemas/NotificationData'
         created_at: { type: string, format: date-time }
@@ -529,6 +535,8 @@ components:
         first_name: { type: string, description: "Name of the other party" }
         last_name: { type: string }
         linked_at: { type: string, format: date-time }
+        diagnosis: { type: [string, "null"], description: "Provider's working diagnosis for this patient (set via PATCH /providers/patients/:patientId/link)" }
+        consent_scope: { type: [string, "null"], description: "Consent scope for this link" }
 
     # ─── Uploads ───────────────────────────────────────────────────────────────
     UploadResult:
@@ -1188,11 +1196,12 @@ components:
         user_id: { type: string, format: uuid }
         channel: { type: string, enum: [email, sms, push] }
         template: { type: string }
-        context: { type: object, additionalProperties: true }
+        payload: { type: object, additionalProperties: true, description: "Template payload data (DB column: payload)" }
         attempts: { type: integer }
         max_attempts: { type: integer }
+        next_attempt_at: { type: [string, "null"], format: date-time, description: "Scheduled next retry time" }
         sent_at: { type: [string, "null"], format: date-time }
-        failed_reason: { type: [string, "null"] }
+        last_error: { type: [string, "null"], description: "Last delivery failure reason (DB column: last_error)" }
         created_at: { type: string, format: date-time }
 
     JobSummary:
@@ -1213,8 +1222,11 @@ components:
         job_name: { type: string }
         status: { type: string, enum: [started, success, failed] }
         started_at: { type: string, format: date-time }
-        ended_at: { type: [string, "null"], format: date-time }
+        finished_at: { type: [string, "null"], format: date-time, description: "Renamed from ended_at — maps to finished_at in DB" }
         error_message: { type: [string, "null"] }
+        duration_ms: { type: [integer, "null"], description: "Execution time in milliseconds" }
+        rows_affected: { type: [integer, "null"], description: "Rows processed/modified by the job" }
+        metadata: { type: [object, "null"], additionalProperties: true, description: "Job-specific context" }
 
     Broadcast:
       description: Admin-sent notification fan-out to a defined audience
@@ -1238,11 +1250,11 @@ components:
     FeatureFlag:
       description: Server-side feature flag controlled by admins
       type: object
-      required: [key, enabled, description, rollout_percent, target_roles, updated_by, updated_at, created_at]
+      required: [key, enabled, rollout_percent, target_roles, updated_by, updated_at, created_at]
       properties:
         key: { type: string }
         enabled: { type: boolean }
-        description: { type: string }
+        description: { type: [string, "null"], description: "Human-readable description of this flag (nullable)" }
         rollout_percent: { type: integer, minimum: 0, maximum: 100 }
         target_roles:
           type: array
@@ -1281,7 +1293,7 @@ components:
         code: { type: string }
         provider_id: { type: string, format: uuid }
         provider_name: { type: string }
-        status: { type: string, enum: [pending, accepted, expired, revoked] }
+        status: { type: string, enum: [pending, connected, expired] }
         invited_email: { type: [string, "null"], format: email }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
@@ -1484,6 +1496,46 @@ components:
               name: { type: string }
               patient_count: { type: integer }
 
+    # ─── Support ───────────────────────────────────────────────────────────────
+    SupportTicket:
+      description: Support ticket submitted by a patient or provider
+      type: object
+      required: [id, user_id, category, subject, body, attach_diagnostic, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        category:
+          type: string
+          description: "Ticket category (e.g. billing, technical, account, clinical)"
+        subject: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 5000 }
+        attach_diagnostic: { type: boolean, description: "Whether to attach device/app diagnostic info" }
+        status:
+          type: string
+          enum: [open, in_progress, resolved, closed]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    # ─── Provider Billing ──────────────────────────────────────────────────────
+    ProviderBilling:
+      description: Provider billing and plan tier information
+      type: object
+      properties:
+        plan: { type: [string, "null"], description: "Current plan name (e.g. pilot, standard, enterprise)" }
+        status: { type: [string, "null"], description: "Subscription status" }
+        trial_ends_at: { type: [string, "null"], format: date-time }
+        next_billing_at: { type: [string, "null"], format: date-time }
+
+    # ─── Linking Metrics ───────────────────────────────────────────────────────
+    LinkingMetrics:
+      description: Aggregate linking metrics for the provider's dashboard
+      type: object
+      properties:
+        total_linked: { type: integer, description: "Total active patient links" }
+        pending_codes: { type: integer, description: "Codes generated but not yet accepted" }
+        expired_codes: { type: integer, description: "Codes that expired without being used" }
+        disconnected_30d: { type: integer, description: "Links disconnected in the last 30 days" }
+
 paths:
   # ──────────────────────────── AUTH — PATIENT FLOW ─────────────────────────────
   /auth/patient/register:
@@ -1654,7 +1706,14 @@ paths:
         Returns the TOTP secret and QR URI for authenticator app setup.
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: TOTP secret + QR URI returned for authenticator app }
+        '200':
+          description: TOTP secret + QR URI returned for authenticator app
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/MfaSetupInit' }
         '401': { description: Invalid or expired setup token }
 
   /auth/mfa/verify-setup:
@@ -1783,7 +1842,7 @@ paths:
   /auth/forgot-password:
     post:
       tags: [Auth]
-      summary: Request password reset email
+      summary: Request password reset code (OTP)
       requestBody:
         required: true
         content:
@@ -1794,12 +1853,59 @@ paths:
               properties:
                 email: { type: string, format: email }
       responses:
-        '200': { description: Always 200 (never reveals if email exists) }
+        '200': { description: Always 200 (never reveals if email exists). Sends a 6-digit OTP if account exists. }
+
+  /auth/reset-password/verify:
+    post:
+      tags: [Auth]
+      summary: Verify password reset OTP and receive short-lived reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, pattern: "^\\d{6}$" }
+      responses:
+        '200':
+          description: OTP accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      reset_token: { type: string }
+        '400': { description: Invalid or expired code }
+        '429': { description: Too many incorrect attempts }
+
+  /auth/reset-password/confirm:
+    post:
+      tags: [Auth]
+      summary: Complete password reset using short-lived reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reset_token, new_password]
+              properties:
+                reset_token: { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        '200': { description: Password reset. All sessions invalidated. }
+        '400': { description: Invalid or expired reset token }
 
   /auth/reset-password:
     post:
       tags: [Auth]
-      summary: Reset password with token from email
+      summary: Reset password (legacy endpoint)
       requestBody:
         required: true
         content:
@@ -1834,8 +1940,23 @@ paths:
       tags: [Auth]
       summary: Logout (delete current refresh token)
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string, description: "The refresh token to invalidate. Omit to invalidate the token matching the Authorization header's session." }
       responses:
-        '200': { description: Logged out }
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Logged out successfully." }
 
   /auth/logout-all:
     delete:
@@ -1843,7 +1964,14 @@ paths:
       summary: Logout from all devices
       security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: All sessions and tokens deleted }
+        '200':
+          description: All sessions and tokens deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "All sessions terminated." }
 
   /auth/change-password:
     patch:
@@ -1861,7 +1989,16 @@ paths:
                 current_password: { type: string }
                 new_password: { type: string, minLength: 8 }
       responses:
-        '200': { description: Password changed }
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Password changed successfully." }
+        '400': { description: Validation error }
+        '401': { description: Current password incorrect }
 
   /auth/fcm-token:
     patch:
@@ -2137,9 +2274,50 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pain_level: { type: integer, minimum: 0, maximum: 10 }
+                pain_types: { type: array, items: { type: string } }
+                body_areas:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/BodyArea'
+                duration_minutes: { type: [integer, "null"] }
+                triggers: { type: array, items: { type: string } }
+                notes: { type: [string, "null"] }
+                logged_at: { type: string, format: date-time }
       responses:
-        '200': { description: Log updated }
+        '200':
+          description: Log updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SymptomLog' }
         '400': { description: Edit window expired (>24h) }
+        '401': { description: Unauthorized }
+        '403': { description: Can only edit your own symptom logs }
+        '404': { description: Log not found }
+    delete:
+      tags: [Symptoms]
+      summary: Delete a symptom log (patient only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '401': { description: Unauthorized }
+        '403': { description: Can only delete your own symptom logs }
+        '404': { description: Log not found }
 
   # ──────────────────────────── EXERCISES ────────────────────────────
   /exercises/assignments:
@@ -2170,8 +2348,26 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '201': { description: Completion recorded }
-        '200': { description: Already completed today }
+        '201':
+          description: Completion recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ExerciseCompletion' }
+                  alreadyCompleted: { type: boolean, enum: [false] }
+        '200':
+          description: Already completed today (idempotent)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ExerciseCompletion' }
+                  alreadyCompleted: { type: boolean, enum: [true] }
+        '403': { description: Assignment does not belong to this patient }
+        '404': { description: Assignment not found }
 
   # ──────────────────────────── NOTIFICATIONS ────────────────────────────
   /notifications:
@@ -2281,6 +2477,16 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                time: { type: string, pattern: "^\\d{2}:\\d{2}$", example: "09:00" }
+                days: { type: array, items: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] } }
+                enabled: { type: boolean }
       responses:
         '200':
           description: Success
@@ -2290,6 +2496,7 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/Reminder' }
+        '404': { description: Not found }
     delete:
       tags: [Reminders]
       summary: Delete a reminder
@@ -2321,6 +2528,24 @@ paths:
       tags: [Providers]
       summary: Update provider profile
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name: { type: string }
+                last_name: { type: string }
+                timezone: { type: string }
+                city: { type: [string, "null"] }
+                state: { type: [string, "null"] }
+                license_number: { type: string }
+                license_type: { type: string }
+                specialty: { type: string }
+                clinic_name: { type: string }
+                credentials: { type: array, items: { type: string } }
+                avatar_url: { type: [string, "null"], format: uri }
       responses:
         '200':
           description: Success
@@ -2519,8 +2744,30 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 255 }
+                description: { type: [string, "null"] }
+                duration_seconds: { type: [integer, "null"] }
+                category: { type: [string, "null"] }
+                instructions: { type: [string, "null"] }
+                video_url: { type: [string, "null"], format: uri }
+                thumbnail_url: { type: [string, "null"], format: uri }
       responses:
-        '200': { description: Exercise updated }
+        '200':
+          description: Exercise updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Exercise' }
+        '404': { description: Not found }
     delete:
       tags: [Providers]
       summary: Delete an exercise
@@ -2658,7 +2905,17 @@ paths:
                   maxLength: 5000
                   description: Provider-only notes. Never visible to patients.
       responses:
-        '201': { description: Response created. Patient notified. }
+        '201':
+          description: Response created. Patient notified.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReportResponse' }
+        '400': { description: Validation error }
+        '403': { description: Not a provider or not linked to this patient }
+        '404': { description: Report not found }
 
   /reports/{id}/review:
     patch:
@@ -2684,7 +2941,20 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '200': { description: Flag toggled }
+        '200':
+          description: Flag toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [flagged]
+                    properties:
+                      flagged: { type: boolean, description: "New flag state after toggle" }
+        '403': { description: Not a provider }
+        '404': { description: Report not found }
 
   /reports/requests:
     get:
@@ -2913,6 +3183,46 @@ paths:
                         items: { $ref: '#/components/schemas/ReportInboxItem' }
 
   /providers/patients/{patientId}/reports:
+    get:
+      tags: [Providers]
+      summary: List a linked patient's reports (provider-scoped)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: status
+          in: query
+          schema: { type: string, enum: [submitted, viewed, reviewed, responded] }
+        - name: urgency
+          in: query
+          schema: { type: string, enum: [routine, concerning, urgent] }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Patient's reports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReportInboxItem' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '403': { description: Provider is not linked to this patient }
     post:
       tags: [Providers]
       summary: File a report on behalf of a patient
@@ -3017,16 +3327,17 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/LinkingCode' }
 
-  /linking/codes/{codeId}/invite:
+  /linking/codes/{code}/invite:
     post:
       tags: [Linking]
       summary: Send email invite with linking code (provider)
+      description: "The path param is the 6-character alphanumeric code value (not a UUID)."
       security: [{ bearerAuth: [] }]
       parameters:
-        - name: codeId
+        - name: code
           in: path
           required: true
-          schema: { type: string }
+          schema: { type: string, minLength: 6, maxLength: 6, description: "6-char alphanumeric linking code" }
       requestBody:
         required: true
         content:
@@ -3220,6 +3531,13 @@ paths:
       tags: [Patients]
       summary: Get account activity log
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
       responses:
         '200':
           description: Success
@@ -3231,6 +3549,12 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/ActivityEvent' }
+                  meta:
+                    type: object
+                    properties:
+                      limit: { type: integer }
+                      offset: { type: integer }
+                      hasMore: { type: boolean }
 
   # ──────────────────────── TRACKING — JAW MOBILITY ─────────────────────────
   /tracking/mobility:
@@ -3468,14 +3792,14 @@ paths:
         '403': { description: "WRONG_PORTAL or ACCOUNT_INACTIVE" }
         '429': { description: Account locked after 5 failed attempts }
 
-  /auth/request-email-change:
+  /auth/change-email/request:
     post:
       tags: [Auth]
       summary: Request to change the account email address
       description: |
         Step 1 of the two-step email change flow. Verifies the current password,
         then emails a 6-digit verification code to the proposed new address.
-        Email is only updated after /auth/verify-email-change is called with
+        Email is only updated after /auth/change-email/verify is called with
         that code.
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -3500,7 +3824,7 @@ paths:
         '401': { description: Wrong current password }
         '409': { description: New email already in use }
 
-  /auth/verify-email-change:
+  /auth/change-email/verify:
     post:
       tags: [Auth]
       summary: Verify the new email address (step 2 of email change)
@@ -4777,6 +5101,285 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/FeatureFlag' }
         '409': { description: Key already exists }
+
+  # ──────────────────────── NOTIFICATIONS — PREFERENCES (shared) ────────────────
+  /notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: Get notification preferences (all roles)
+      description: Role-agnostic endpoint. Accessible to patients, providers, and admins.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NotificationPreferences' }
+    patch:
+      tags: [Notifications]
+      summary: Update notification preferences (all roles)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                exercise_reminders: { type: boolean }
+                symptom_checkin: { type: boolean }
+                provider_messages: { type: boolean }
+                report_updates: { type: boolean }
+                tips_updates: { type: boolean }
+                email_digest: { type: string, enum: [instant, daily, weekly, off] }
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/NotificationPreferences' }
+
+  # ──────────────────────── REPORTS INBOX — BULK MARK VIEWED ────────────────────
+  /reports/inbox/mark-viewed:
+    patch:
+      tags: [Reports]
+      summary: Bulk mark all inbox items as viewed (provider)
+      description: Marks all submitted-status reports in the provider's inbox as viewed in one call.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Count of updated records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [updatedCount]
+                    properties:
+                      updatedCount: { type: integer, description: "Number of reports marked as viewed" }
+        '403': { description: Providers only }
+
+  # ──────────────────────── PROVIDERS — SESSIONS + ACTIVITY ─────────────────────
+  /providers/me/sessions:
+    get:
+      tags: [Providers]
+      summary: List provider's active sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Session' }
+
+  /providers/me/sessions/{sessionId}:
+    delete:
+      tags: [Providers]
+      summary: Revoke a provider session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Session revoked }
+        '404': { description: Session not found }
+
+  /providers/me/activity:
+    get:
+      tags: [Providers]
+      summary: Get provider account activity log
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ActivityEvent' }
+                  meta:
+                    type: object
+                    properties:
+                      limit: { type: integer }
+                      offset: { type: integer }
+                      hasMore: { type: boolean }
+
+  # ──────────────────────── PROVIDERS — BILLING ─────────────────────────────────
+  /providers/me/billing:
+    get:
+      tags: [Providers]
+      summary: Get provider billing and plan tier
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Billing info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ProviderBilling' }
+
+  # ──────────────────────── PROVIDERS — LINK METADATA ───────────────────────────
+  /providers/patients/{patientId}/link:
+    patch:
+      tags: [Providers]
+      summary: Update per-link metadata (working diagnosis, consent scope)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                diagnosis: { type: [string, "null"], description: "Provider's working diagnosis for this patient" }
+                consent_scope: { type: [string, "null"], description: "Consent scope for this link" }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Link' }
+        '403': { description: Provider is not linked to this patient }
+        '404': { description: Link not found }
+
+  # ──────────────────────── LINKING — METRICS ───────────────────────────────────
+  /linking/metrics:
+    get:
+      tags: [Linking]
+      summary: Aggregate linking metrics for the provider dashboard (provider)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Linking metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/LinkingMetrics' }
+        '403': { description: Providers only }
+
+  # ──────────────────────── SUPPORT ─────────────────────────────────────────────
+  /support/tickets:
+    post:
+      tags: [Support]
+      summary: Submit a support ticket (all authenticated users)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, subject, body]
+              properties:
+                category:
+                  type: string
+                  description: "Ticket category (e.g. billing, technical, account, clinical)"
+                subject: { type: string, maxLength: 200 }
+                body: { type: string, maxLength: 5000 }
+                attach_diagnostic:
+                  type: boolean
+                  default: false
+                  description: "Attach device/app diagnostic info to the ticket"
+      responses:
+        '201':
+          description: Ticket created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SupportTicket' }
+        '400': { description: Validation error }
+    get:
+      tags: [Support]
+      summary: List the calling user's own support tickets
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: Support tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SupportTicket' }
+
+  # ──────────────────────── HEALTH CHECK ────────────────────────────────────────
+  /health:
+    get:
+      tags: [Auth]
+      summary: API health check (unauthenticated)
+      description: Returns database connectivity status. Used by load balancers and uptime monitors.
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, timestamp]
+                properties:
+                  status: { type: string, enum: [healthy, degraded] }
+                  timestamp: { type: string, format: date-time }
+                  checks:
+                    type: object
+                    properties:
+                      db: { type: string, enum: [ok, error] }
+        '503':
+          description: Unhealthy (DB unreachable)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [unhealthy] }
+                  timestamp: { type: string, format: date-time }
+                  checks:
+                    type: object
+                    additionalProperties: { type: string }
 
   /admin/feature-flags/{key}:
     patch:

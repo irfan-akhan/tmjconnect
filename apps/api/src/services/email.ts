@@ -6,6 +6,7 @@ export interface EmailService {
   sendVerifyEmail(to: string, code: string): Promise<void>;
   sendWelcome(to: string, firstName: string): Promise<void>;
   sendPasswordReset(to: string, resetUrl: string): Promise<void>;
+  sendPasswordResetCode(to: string, code: string): Promise<void>;
   sendNewDeviceLogin(to: string, firstName: string, ip: string, device: string): Promise<void>;
   sendAccountLocked(to: string, firstName: string): Promise<void>;
   sendLinkAccepted(to: string, providerName: string, patientName: string): Promise<void>;
@@ -136,6 +137,18 @@ function templates(appUrl: string) {
         <p>Click the button below to reset your TMJConnect password. This link expires in 1 hour.</p>
         ${ctaButton(resetUrl, 'Reset Password')}
         <p style="color:#888;font-size:13px;">If you did not request a password reset, you can safely ignore this email.</p>
+      `),
+    }),
+
+    passwordResetCode: (code: string) => ({
+      subject: 'Your TMJConnect password reset code',
+      html: baseTemplate(`
+        <h2 style="color:${BRAND_NAVY};">Reset your password</h2>
+        <p>Enter this 6-digit code in TMJConnect to continue resetting your password:</p>
+        <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:${BRAND_NAVY};text-align:center;padding:16px;background:#f5f5f5;border-radius:4px;margin:16px 0;">
+          ${code}
+        </div>
+        <p style="color:#888;font-size:13px;">This code expires in 15 minutes. If you did not request a password reset, you can safely ignore this email.</p>
       `),
     }),
 
@@ -334,6 +347,13 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
     },
     async sendPasswordReset(to, resetUrl) {
       const { subject, html } = tmpl.passwordReset(resetUrl);
+      await send(to, subject, html);
+    },
+    async sendPasswordResetCode(to, code) {
+      const { subject, html } = tmpl.passwordResetCode(code);
+      if (!sgMail && !isProduction) {
+        logger.info({ to, code }, '[EmailService stub] Password reset code (dev only)');
+      }
       await send(to, subject, html);
     },
     async sendNewDeviceLogin(to, firstName, ip, device) {
