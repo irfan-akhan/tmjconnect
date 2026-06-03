@@ -8,9 +8,12 @@
 
 export type ActivityCategory = 'auth' | 'security' | 'account' | 'success' | 'failure' | 'view' | 'create' | 'update' | 'delete' | 'admin';
 
+export type ActivityStatus = 'success' | 'failed' | 'neutral';
+
 export interface ActivityEventConfig {
   title: string;
   category: ActivityCategory;
+  status: ActivityStatus;
   description?: string;
 }
 
@@ -21,101 +24,121 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'auth.patient_registered': {
     title: 'Account created',
     category: 'success',
+    status: 'success',
     description: 'Patient account registered',
   },
   'auth.provider_registered': {
     title: 'Provider account created',
     category: 'success',
+    status: 'success',
     description: 'Provider account registered',
   },
   'auth.login.success': {
     title: 'Signed in',
     category: 'success',
+    status: 'success',
     description: 'Successfully logged in',
   },
   'auth.login.failed': {
     title: 'Failed login attempt',
     category: 'failure',
+    status: 'failed',
     description: 'Login failed',
   },
   'auth.logout': {
     title: 'Signed out',
     category: 'auth',
+    status: 'neutral',
     description: 'Logged out from this device',
   },
   'auth.logout_all': {
     title: 'Signed out everywhere',
     category: 'security',
+    status: 'neutral',
     description: 'Logged out from all devices',
   },
   'auth.password_reset': {
     title: 'Password reset',
     category: 'security',
+    status: 'success',
     description: 'Password changed via reset link',
   },
   'auth.password_reset_requested': {
     title: 'Password reset requested',
     category: 'account',
+    status: 'neutral',
     description: 'Password reset email sent',
   },
   'auth.password_reset_code_verified': {
     title: 'Reset code verified',
     category: 'success',
+    status: 'success',
     description: 'Password reset code confirmed',
   },
   'auth.password_reset_confirmed': {
     title: 'Password reset confirmed',
     category: 'success',
+    status: 'success',
     description: 'New password set',
   },
   'auth.change_password': {
     title: 'Password changed',
     category: 'security',
+    status: 'success',
     description: 'Password updated from account settings',
   },
   'auth.mfa_init': {
     title: '2FA setup started',
     category: 'security',
+    status: 'neutral',
     description: 'Two-factor authentication setup initiated',
   },
   'auth.mfa_setup_started': {
     title: '2FA configuration started',
     category: 'security',
+    status: 'neutral',
     description: 'MFA setup in progress',
   },
   'auth.mfa_enabled': {
     title: 'Two-factor authentication enabled',
     category: 'security',
+    status: 'success',
     description: '2FA turned on',
   },
   'auth.mfa_disabled': {
     title: 'Two-factor authentication disabled',
     category: 'account',
+    status: 'neutral',
     description: '2FA turned off',
   },
   'auth.mfa_verify': {
     title: 'Two-factor code verified',
     category: 'success',
+    status: 'success',
     description: '2FA authentication completed',
   },
   'auth.verify_email': {
     title: 'Email verified',
     category: 'success',
+    status: 'success',
     description: 'Account email confirmed',
   },
   'auth.email_change_requested': {
     title: 'Email change requested',
     category: 'account',
+    status: 'neutral',
     description: 'New email verification sent',
   },
   'auth.email_change_verified': {
     title: 'Email address changed',
     category: 'account',
+    status: 'success',
     description: 'Email successfully updated',
   },
   'auth.tos_accepted': {
     title: 'Terms accepted',
     category: 'account',
+    status: 'success',
     description: 'Agreed to terms of service',
   },
 
@@ -125,11 +148,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'session_revoked': {
     title: 'Session ended',
     category: 'security',
+    status: 'neutral',
     description: 'Session was terminated',
   },
   'admin_session_terminated': {
     title: 'Session terminated (admin)',
     category: 'admin',
+    status: 'neutral',
     description: 'Session ended by administrator',
   },
 
@@ -139,16 +164,19 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'profile_updated': {
     title: 'Profile updated',
     category: 'account',
+    status: 'success',
     description: 'Account information changed',
   },
   'provider_profile_updated': {
     title: 'Profile updated',
     category: 'account',
+    status: 'success',
     description: 'Provider information changed',
   },
   'account_deletion_requested': {
     title: 'Account deletion requested',
     category: 'account',
+    status: 'failed',
     description: 'Account scheduled for deletion',
   },
 
@@ -158,16 +186,19 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'linking_code_accepted': {
     title: 'Account linked',
     category: 'account',
+    status: 'success',
     description: 'Connected to provider account',
   },
   'link_disconnected': {
     title: 'Account unlinked',
     category: 'account',
+    status: 'neutral',
     description: 'Disconnected from provider',
   },
   'provider_updated_patient_link': {
     title: 'Patient link updated',
     category: 'update',
+    status: 'success',
     description: 'Patient-provider link modified',
   },
 
@@ -177,46 +208,55 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'symptom_log_upserted': {
     title: 'Symptom logged',
     category: 'create',
+    status: 'success',
     description: 'Symptom entry created or updated',
   },
   'symptom_logs_viewed': {
     title: 'Symptom history viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Viewed symptom logs',
   },
   'symptom_log_viewed': {
     title: 'Symptom entry viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Opened symptom log detail',
   },
   'symptom_log_updated': {
     title: 'Symptom entry updated',
     category: 'update',
+    status: 'success',
     description: 'Modified symptom log',
   },
   'symptom_log_deleted': {
     title: 'Symptom entry deleted',
     category: 'delete',
+    status: 'neutral',
     description: 'Removed symptom log',
   },
   'symptom_stats_viewed': {
     title: 'Symptom statistics viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked symptom analytics',
   },
   'symptom_calendar_viewed': {
     title: 'Symptom calendar viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Viewed monthly symptom calendar',
   },
   'symptom_insights_viewed': {
     title: 'Symptom insights viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked symptom insights',
   },
   'symptom_correlation_viewed': {
     title: 'Symptom correlation viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Analyzed symptom correlations',
   },
 
@@ -226,51 +266,61 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'patient_viewed_assignments': {
     title: 'Exercise assignments viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Viewed active exercises',
   },
   'exercise_completed': {
     title: 'Exercise completed',
     category: 'success',
+    status: 'success',
     description: 'Marked exercise as done',
   },
   'provider_viewed_patient_assignments': {
     title: 'Patient assignments viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Viewed patient exercise assignments',
   },
   'assignment_created': {
     title: 'Exercise assigned',
     category: 'create',
+    status: 'success',
     description: 'New exercise assigned to patient',
   },
   'assignment_updated': {
     title: 'Assignment updated',
     category: 'update',
+    status: 'success',
     description: 'Exercise assignment modified',
   },
   'assignment_deleted': {
     title: 'Assignment removed',
     category: 'delete',
+    status: 'neutral',
     description: 'Exercise assignment deleted',
   },
   'provider_exercises_viewed': {
     title: 'Exercise library viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Browsed exercise catalog',
   },
   'exercise_created': {
     title: 'Exercise created',
     category: 'create',
+    status: 'success',
     description: 'New exercise added to library',
   },
   'exercise_updated': {
     title: 'Exercise updated',
     category: 'update',
+    status: 'success',
     description: 'Exercise modified',
   },
   'exercise_deleted': {
     title: 'Exercise deleted',
     category: 'delete',
+    status: 'neutral',
     description: 'Exercise removed from library',
   },
 
@@ -280,66 +330,79 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'report_submitted': {
     title: 'Report submitted',
     category: 'success',
+    status: 'success',
     description: 'Assessment report submitted',
   },
   'report_viewed': {
     title: 'Report viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Opened report detail',
   },
   'report_responded': {
     title: 'Report responded',
     category: 'create',
+    status: 'success',
     description: 'Provider responded to report',
   },
   'report_reviewed': {
     title: 'Report reviewed',
     category: 'update',
+    status: 'success',
     description: 'Report marked as reviewed',
   },
   'report_flagged': {
     title: 'Report flagged',
     category: 'update',
+    status: 'failed',
     description: 'Report flagged for attention',
   },
   'provider_viewed_report_inbox': {
     title: 'Report inbox viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked incoming reports',
   },
   'provider_marked_inbox_viewed': {
     title: 'Reports marked as viewed',
     category: 'update',
+    status: 'success',
     description: 'Inbox marked as viewed',
   },
   'patient_viewed_own_reports': {
     title: 'Your reports viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked submitted reports',
   },
   'report_requests_listed': {
     title: 'Report requests viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Viewed pending report requests',
   },
   'report_request_created': {
     title: 'Report requested',
     category: 'create',
+    status: 'success',
     description: 'Provider requested new report',
   },
   'report_request_dismissed': {
     title: 'Report request dismissed',
     category: 'update',
+    status: 'neutral',
     description: 'Report request archived',
   },
   'provider_viewed_patient_reports': {
     title: 'Patient reports viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Reviewed patient reports',
   },
   'report_created_on_behalf': {
     title: 'Report created (on behalf)',
     category: 'create',
+    status: 'success',
     description: 'Provider submitted report for patient',
   },
 
@@ -349,31 +412,37 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_listed_notes': {
     title: 'Clinical notes viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Reviewed clinical notes',
   },
   'clinical_note_created': {
     title: 'Clinical note created',
     category: 'create',
+    status: 'success',
     description: 'Added new clinical note',
   },
   'clinical_note_updated': {
     title: 'Clinical note updated',
     category: 'update',
+    status: 'success',
     description: 'Modified clinical note',
   },
   'clinical_note_deleted': {
     title: 'Clinical note deleted',
     category: 'delete',
+    status: 'neutral',
     description: 'Removed clinical note',
   },
   'provider_viewed_last_clinic_visit': {
     title: 'Clinic visit history viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked last clinic visit',
   },
   'provider_recorded_clinic_visit': {
     title: 'Clinic visit recorded',
     category: 'create',
+    status: 'success',
     description: 'Documented clinic visit',
   },
 
@@ -383,46 +452,55 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'mobility_logged': {
     title: 'Jaw mobility logged',
     category: 'create',
+    status: 'success',
     description: 'Recorded jaw mobility measurement',
   },
   'mobility_list_viewed': {
     title: 'Mobility history viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked jaw mobility logs',
   },
   'mobility_trend_viewed': {
     title: 'Mobility trend viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Analyzed mobility trends',
   },
   'medication_logged': {
     title: 'Medication logged',
     category: 'create',
+    status: 'success',
     description: 'Recorded medication use',
   },
   'medication_list_viewed': {
     title: 'Medication history viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked medication logs',
   },
   'medication_correlation_viewed': {
     title: 'Medication correlation viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Analyzed medication correlations',
   },
   'sleep_logged': {
     title: 'Sleep logged',
     category: 'create',
+    status: 'success',
     description: 'Recorded sleep data',
   },
   'sleep_list_viewed': {
     title: 'Sleep history viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked sleep logs',
   },
   'sleep_correlation_viewed': {
     title: 'Sleep correlation viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Analyzed sleep correlations',
   },
 
@@ -432,21 +510,25 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'reminders_viewed': {
     title: 'Reminders viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked reminders',
   },
   'reminder_created': {
     title: 'Reminder created',
     category: 'create',
+    status: 'success',
     description: 'New reminder set',
   },
   'reminder_updated': {
     title: 'Reminder updated',
     category: 'update',
+    status: 'success',
     description: 'Reminder modified',
   },
   'reminder_deleted': {
     title: 'Reminder deleted',
     category: 'delete',
+    status: 'neutral',
     description: 'Reminder removed',
   },
 
@@ -456,46 +538,55 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'intake_form_created': {
     title: 'Intake form created',
     category: 'create',
+    status: 'success',
     description: 'New intake form added',
   },
   'intake_forms_listed': {
     title: 'Intake forms viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Browsed intake forms',
   },
   'intake_form_viewed': {
     title: 'Intake form viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Opened intake form',
   },
   'intake_form_updated': {
     title: 'Intake form updated',
     category: 'update',
+    status: 'success',
     description: 'Modified intake form',
   },
   'intake_form_deleted': {
     title: 'Intake form deleted',
     category: 'delete',
+    status: 'neutral',
     description: 'Removed intake form',
   },
   'intake_form_assigned': {
     title: 'Intake form assigned',
     category: 'create',
+    status: 'success',
     description: 'Assigned intake form to patient',
   },
   'intake_responses_viewed': {
     title: 'Intake responses viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Reviewed intake responses',
   },
   'patient_intake_assignments_viewed': {
     title: 'Intake assignments viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked pending intake forms',
   },
   'intake_response_submitted': {
     title: 'Intake form submitted',
     category: 'success',
+    status: 'success',
     description: 'Completed intake form',
   },
 
@@ -505,11 +596,13 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'support_ticket_created': {
     title: 'Support ticket created',
     category: 'create',
+    status: 'success',
     description: 'Opened support request',
   },
   'support_tickets_viewed': {
     title: 'Support tickets viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked support requests',
   },
 
@@ -519,31 +612,37 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'patient_dashboard_viewed': {
     title: 'Dashboard viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Accessed patient dashboard',
   },
   'patient_profile_viewed': {
     title: 'Profile viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Viewed profile settings',
   },
   'patient_sessions_viewed': {
     title: 'Active sessions viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked logged-in devices',
   },
   'patient_activity_viewed': {
     title: 'Activity log viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Reviewed account activity',
   },
   'patient_notification_prefs_viewed': {
     title: 'Notification preferences viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked notification settings',
   },
   'patient_data_exported': {
     title: 'Data exported',
     category: 'account',
+    status: 'success',
     description: 'Downloaded personal data',
   },
 
@@ -553,31 +652,37 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_dashboard_viewed': {
     title: 'Dashboard viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Accessed provider dashboard',
   },
   'provider_analytics_viewed': {
     title: 'Analytics viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Reviewed analytics',
   },
   'provider_profile_viewed': {
     title: 'Profile viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Viewed profile settings',
   },
   'provider_billing_viewed': {
     title: 'Billing information viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked billing details',
   },
   'provider_sessions_viewed': {
     title: 'Active sessions viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked logged-in devices',
   },
   'provider_activity_viewed': {
     title: 'Activity log viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Reviewed activity history',
   },
 
@@ -587,26 +692,31 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'provider_listed_patients': {
     title: 'Patient list viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Browsed patient list',
   },
   'provider_viewed_patient_detail': {
     title: 'Patient detail viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Opened patient profile',
   },
   'provider_viewed_patient_symptoms': {
     title: 'Patient symptoms viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Reviewed patient symptom logs',
   },
   'provider_viewed_patient_analytics': {
     title: 'Patient analytics viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Analyzed patient data',
   },
   'provider_listed_report_requests': {
     title: 'Report requests viewed',
     category: 'view',
+    status: 'neutral',
     description: 'Checked pending report requests',
   },
 
@@ -616,81 +726,97 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
   'admin_viewed_analytics': {
     title: 'Platform analytics viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed system analytics',
   },
   'admin_listed_users': {
     title: 'User list viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Browsed all users',
   },
   'admin_viewed_user': {
     title: 'User detail viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed user profile',
   },
   'admin_user_updated': {
     title: 'User updated',
     category: 'admin',
+    status: 'success',
     description: 'Modified user account',
   },
   'admin_viewed_audit_logs': {
     title: 'Audit logs viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed system audit trail',
   },
   'admin_audit_export': {
     title: 'Audit logs exported',
     category: 'admin',
+    status: 'success',
     description: 'Downloaded audit report',
   },
   'admin_viewed_login_events': {
     title: 'Login events viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed login history',
   },
   'admin_viewed_all_reports': {
     title: 'All reports viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed system reports',
   },
   'admin_outbox_retried': {
     title: 'Notification retried',
     category: 'admin',
+    status: 'success',
     description: 'Retried failed notification',
   },
   'admin_outbox_dropped': {
     title: 'Notification dropped',
     category: 'admin',
+    status: 'failed',
     description: 'Removed notification from queue',
   },
   'admin_job_triggered': {
     title: 'System job triggered',
     category: 'admin',
+    status: 'success',
     description: 'Manually executed background job',
   },
   'admin_viewed_provider_performance': {
     title: 'Provider performance viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed provider metrics',
   },
   'admin_viewed_patient_engagement': {
     title: 'Patient engagement viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Analyzed patient engagement',
   },
   'admin_viewed_security_summary': {
     title: 'Security summary viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed security metrics',
   },
   'admin_viewed_phi_access_by_actor': {
     title: 'PHI access by user viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed user PHI access logs',
   },
   'admin_viewed_phi_access_by_resource': {
     title: 'PHI access by resource viewed',
     category: 'admin',
+    status: 'neutral',
     description: 'Reviewed resource-level PHI access',
   },
 
@@ -706,6 +832,7 @@ export function getActivityEventConfig(action: string): ActivityEventConfig {
     ACTIVITY_EVENT_MAP[action] ?? {
       title: action.replace(/[._]/g, ' '),
       category: 'auth' as const,
+      status: 'neutral' as const,
       description: undefined,
     }
   );

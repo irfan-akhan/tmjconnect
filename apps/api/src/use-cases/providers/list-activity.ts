@@ -53,6 +53,7 @@ export async function execute(deps: Deps, input: ListActivityInput) {
       ...r,
       title: eventConfig.title,
       category: eventConfig.category,
+      status: eventConfig.status,
       ip_address: r.ip_address ? String(r.ip_address) : null,
       created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     };
