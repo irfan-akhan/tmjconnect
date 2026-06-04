@@ -29,6 +29,7 @@ import * as ListOutboxPending from '../use-cases/admin/list-outbox-pending';
 import * as ListActiveSessions from '../use-cases/admin/list-active-sessions';
 import * as GetJobSummaries from '../use-cases/admin/get-job-summaries';
 import * as ListJobHistory from '../use-cases/admin/list-job-history';
+import * as GetPlatformAnalytics from '../use-cases/admin/get-platform-analytics';
 import { retryOutboxEntry, dropOutboxEntry, deleteSession } from '../db/queries/admin.queries';
 
 export function adminRouter(container: Container) {
@@ -41,6 +42,14 @@ export function adminRouter(container: Container) {
   router.get('/stats', async (_req, res, next) => {
     try {
       res.json({ data: await GetStats.execute(container) });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/analytics', auditLog('admin_viewed_analytics', 'user'), async (req, res, next) => {
+    try {
+      const parsedDays = Number.parseInt(String(req.query.days ?? '30'), 10);
+      const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 1), 365) : 30;
+      res.json({ data: await GetPlatformAnalytics.execute(container, { days }) });
     } catch (err) { next(err); }
   });
 
