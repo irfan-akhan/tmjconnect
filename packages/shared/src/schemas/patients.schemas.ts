@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { freeText, optionalFreeText } from '../utils/zodHelpers';
+import { commonListQuerySchema } from './common.schemas';
 
 // ─── Update Profile ───────────────────────────────────────────────────────────────
 export const updatePatientProfileSchema = z.object({
@@ -45,6 +46,17 @@ export const symptomListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+// ─── Session List Query ───────────────────────────────────────────────────────────
+export const sessionListQuerySchema = commonListQuerySchema.extend({
+  sortBy: z.enum(['login_at', 'last_activity']).optional(),
+});
+
+// ─── Activity List Query ───────────────────────────────────────────────────────────
+export const activityListQuerySchema = commonListQuerySchema.extend({
+  action: z.string().max(100).optional(),
+  sortBy: z.enum(['created_at', 'action']).optional(),
+});
+
 // ─── Report ───────────────────────────────────────────────────────────────────────
 export const createReportSchema = z.object({
   urgency: z.enum(['routine', 'concerning', 'urgent']),
@@ -65,3 +77,10 @@ export const createReminderSchema = z.object({
 });
 
 export const updateReminderSchema = createReminderSchema.partial();
+
+// ─── Reminder List Query ──────────────────────────────────────────────────────────
+export const reminderListQuerySchema = commonListQuerySchema.extend({
+  type: z.enum(['exercise', 'symptom']).optional(),
+  enabled: z.enum(['true', 'false']).optional(),
+  sortBy: z.enum(['created_at', 'time', 'type']).optional(),
+});

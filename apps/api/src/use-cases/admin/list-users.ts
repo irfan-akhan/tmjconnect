@@ -3,9 +3,13 @@ import { listUsers, countUsers } from '../../db/queries/admin.queries';
 
 type Deps = Pick<Container, 'db'>;
 
+type SortOrder = 'asc' | 'desc';
+
 export type ListUsersInput = {
-  page: number;
   limit: number;
+  offset: number;
+  sortBy?: 'created_at' | 'email' | 'role' | 'is_active';
+  sortOrder?: SortOrder;
   search?: string;
   role?: 'patient' | 'provider' | 'admin';
   is_active?: boolean;
@@ -14,10 +18,10 @@ export type ListUsersInput = {
 };
 
 export async function execute(deps: Deps, input: ListUsersInput) {
-  const { page, limit, ...filters } = input;
+  const { limit, offset, sortBy, sortOrder = 'desc', ...filters } = input;
   const [items, total] = await Promise.all([
-    listUsers(deps.db, page, limit, filters),
+    listUsers(deps.db, limit, offset, filters, sortBy, sortOrder),
     countUsers(deps.db, filters),
   ]);
-  return { items, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  return { items, meta: { limit, offset, total, hasMore: offset + limit < total, sortBy, sortOrder } };
 }

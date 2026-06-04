@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { commonListQuerySchema } from './common.schemas';
 
 // ─── Update Profile ───────────────────────────────────────────────────────────────
 export const updateProviderProfileSchema = z.object({
@@ -16,10 +17,9 @@ export const updateProviderProfileSchema = z.object({
 });
 
 // ─── Patient list query ────────────────────────────────────────────────────────────
-export const patientListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+export const patientListQuerySchema = commonListQuerySchema.extend({
   search: z.string().max(100).optional(),
+  sortBy: z.enum(['linked_at', 'last_symptom_at', 'avg_pain_7d', 'first_name', 'last_name']).optional(),
 });
 
 // ─── Linking ──────────────────────────────────────────────────────────────────────
@@ -62,5 +62,9 @@ export const createSupportTicketSchema = z.object({
   subject: z.string().min(3).max(255),
   body: z.string().min(10).max(10000),
   attach_diagnostic: z.boolean().optional().default(false),
+});
+
+export const supportTicketListQuerySchema = commonListQuerySchema.extend({
+  sortBy: z.enum(['created_at', 'category', 'status']).optional(),
 });
 

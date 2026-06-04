@@ -3,13 +3,22 @@ import { listActiveSessions, countActiveSessions, getSessionSummary } from '../.
 
 type Deps = Pick<Container, 'db'>;
 
-export type Input = { page: number; limit: number; role?: string };
+type SortOrder = 'asc' | 'desc';
+
+export type Input = {
+  limit: number;
+  offset: number;
+  sortBy?: 'last_active' | 'created_at' | 'user_email' | 'user_role';
+  sortOrder?: SortOrder;
+  role?: string;
+};
 
 export async function execute(deps: Deps, input: Input) {
+  const { limit, offset, sortBy, sortOrder = 'desc', role } = input;
   const [items, total, summary] = await Promise.all([
-    listActiveSessions(deps.db, input.page, input.limit, input.role),
-    countActiveSessions(deps.db, input.role),
+    listActiveSessions(deps.db, limit, offset, role, sortBy, sortOrder),
+    countActiveSessions(deps.db, role),
     getSessionSummary(deps.db),
   ]);
-  return { items, meta: { page: input.page, limit: input.limit, total }, summary };
+  return { items, meta: { limit, offset, total, hasMore: offset + limit < total, sortBy, sortOrder }, summary };
 }

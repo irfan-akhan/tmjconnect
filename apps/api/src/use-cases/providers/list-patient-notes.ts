@@ -4,12 +4,15 @@ import { verifyProviderLink } from '../../db/queries/providers.queries';
 import { listNotesForPatient, countNotesForPatient } from '../../db/queries/clinical-notes.queries';
 
 type Deps = Pick<Container, 'db'>;
+type SortOrder = 'asc' | 'desc';
 
 export type ListPatientNotesInput = {
   providerId: string;
   patientId: string;
-  page: number;
   limit: number;
+  offset: number;
+  sortBy?: 'created_at' | 'updated_at';
+  sortOrder?: SortOrder;
 };
 
 export async function execute(deps: Deps, input: ListPatientNotesInput) {
@@ -18,16 +21,11 @@ export async function execute(deps: Deps, input: ListPatientNotesInput) {
 
   const provider = { id: input.providerId, role: 'provider' as const };
   const [items, total] = await Promise.all([
-    listNotesForPatient(deps.db, input.patientId, provider, input.page, input.limit),
+    listNotesForPatient(deps.db, input.patientId, provider, input.limit, input.offset, input.sortBy, input.sortOrder),
     countNotesForPatient(deps.db, input.patientId, input.providerId),
   ]);
   return {
     items,
-    meta: {
-      page: input.page,
-      limit: input.limit,
-      total,
-      totalPages: Math.ceil(total / input.limit),
-    },
+    meta: { limit: input.limit, offset: input.offset, total, hasMore: input.offset + input.limit < total, sortBy: input.sortBy, sortOrder: input.sortOrder ?? 'desc' },
   };
 }

@@ -3,7 +3,8 @@ import type { Container } from '../config/container';
 import { authenticate, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
-import { updatePatientProfileSchema, updateNotificationPrefsSchema } from '@tmjconnect/shared';
+import { updatePatientProfileSchema, updateNotificationPrefsSchema, sessionListQuerySchema, activityListQuerySchema } from '@tmjconnect/shared';
+import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import * as GetProfile from '../use-cases/patients/get-profile';
 import * as UpdateProfile from '../use-cases/patients/update-profile';
 import * as DeleteAccount from '../use-cases/patients/delete-account';
@@ -44,24 +45,31 @@ export function patientsRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.get('/me/sessions', auditLog('patient_sessions_viewed', 'session'), async (req, res, next) => {
-    try {
-      res.json({ data: await ListSessions.execute(container, { userId: req.user!.id }) });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/me/sessions',
+    validate(sessionListQuerySchema, 'query'),
+    auditLog('patient_sessions_viewed', 'session'),
+    async (req, res, next) => {
+      try {
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const result = await ListSessions.execute(container, { userId: req.user!.id, limit, offset, sortBy: sortBy as ListSessions.ListSessionsInput['sortBy'], sortOrder });
+        res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
+      } catch (err) { next(err); }
+    },
+  );
 
-  router.get('/me/activity', auditLog('patient_activity_viewed', 'user'), async (req, res, next) => {
-    try {
-      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
-      const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
-      const result = await ListActivity.execute(container, {
-        userId: req.user!.id,
-        limit,
-        offset,
-      });
-      res.json({ data: result.items, meta: { limit, offset, hasMore: result.hasMore } });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/me/activity',
+    validate(activityListQuerySchema, 'query'),
+    auditLog('patient_activity_viewed', 'user'),
+    async (req, res, next) => {
+      try {
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const result = await ListActivity.execute(container, { userId: req.user!.id, limit, offset, sortBy: sortBy as ListActivity.ListActivityInput['sortBy'], sortOrder });
+        res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
+      } catch (err) { next(err); }
+    },
+  );
 
   router.delete('/me/sessions/:sessionId', auditLog('session_revoked', 'session'), async (req, res, next) => {
     try {

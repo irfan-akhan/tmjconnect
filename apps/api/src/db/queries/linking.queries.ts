@@ -1,11 +1,12 @@
 /**
  * linking.queries.ts — All database interactions for the linking module.
  */
-import { eq, and, sql, isNull, desc } from 'drizzle-orm';
+import { eq, and, sql, isNull, asc, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { linkingCodes, patientProviderLinks, profiles, users } from '../schema';
 
 type DbClient = Db['db'];
+type SortOrder = 'asc' | 'desc';
 
 // ─── Code generation ─────────────────────────────────────────────────────────────
 
@@ -22,12 +23,24 @@ export async function insertLinkingCode(
   return row;
 }
 
-export async function listProviderCodes(db: DbClient, providerId: string) {
-  return db
+export async function listProviderCodes(
+  db: DbClient,
+  providerId: string,
+  limit = 20,
+  offset = 0,
+  sortBy: 'created_at' | 'expires_at' | 'status' = 'created_at',
+  sortOrder: SortOrder = 'desc',
+) {
+  const column = sortBy === 'expires_at' ? linkingCodes.expires_at : sortBy === 'status' ? linkingCodes.status : linkingCodes.created_at;
+  const orderBy = sortOrder === 'asc' ? asc(column) : desc(column);
+  let query = db
     .select()
     .from(linkingCodes)
     .where(eq(linkingCodes.provider_id, providerId))
-    .orderBy(desc(linkingCodes.created_at));
+    .orderBy(orderBy, desc(linkingCodes.created_at));
+  (query as any) = query.limit(limit);
+  (query as any) = query.offset(offset);
+  return query;
 }
 
 // ─── Code acceptance ─────────────────────────────────────────────────────────────
@@ -130,9 +143,28 @@ export async function disconnectLink(
 
 // ─── Link listing ────────────────────────────────────────────────────────────────
 
-export async function listUserLinks(db: DbClient, userId: string, role: string) {
+export async function listUserLinks(
+  db: DbClient,
+  userId: string,
+  role: string,
+  limit = 50,
+  offset = 0,
+  sortBy: 'linked_at' | 'first_name' | 'last_name' | 'email' = 'linked_at',
+  sortOrder: SortOrder = 'desc',
+) {
+  const orderBy = (defaultColumn: typeof patientProviderLinks.linked_at) => {
+    const column = sortBy === 'first_name'
+      ? profiles.first_name
+      : sortBy === 'last_name'
+      ? profiles.last_name
+      : sortBy === 'email'
+      ? users.email
+      : defaultColumn;
+    return sortOrder === 'asc' ? asc(column) : desc(column);
+  };
+
   if (role === 'provider') {
-    return db
+    let q = db
       .select({
         link_id: patientProviderLinks.id,
         patient_id: patientProviderLinks.patient_id,
@@ -151,11 +183,14 @@ export async function listUserLinks(db: DbClient, userId: string, role: string) 
         eq(patientProviderLinks.provider_id, userId),
         isNull(patientProviderLinks.unlinked_at),
       ))
-      .orderBy(desc(patientProviderLinks.linked_at));
+      .orderBy(orderBy(patientProviderLinks.linked_at), desc(patientProviderLinks.linked_at));
+    (q as any) = q.limit(limit);
+    (q as any) = q.offset(offset);
+    return q;
   }
 
   // Patient — show linked providers.
-  return db
+  let q = db
     .select({
       link_id: patientProviderLinks.id,
       provider_id: patientProviderLinks.provider_id,
@@ -173,7 +208,10 @@ export async function listUserLinks(db: DbClient, userId: string, role: string) 
       eq(patientProviderLinks.patient_id, userId),
       isNull(patientProviderLinks.unlinked_at),
     ))
-    .orderBy(desc(patientProviderLinks.linked_at));
+    .orderBy(orderBy(patientProviderLinks.linked_at), desc(patientProviderLinks.linked_at));
+  (q as any) = q.limit(limit);
+  (q as any) = q.offset(offset);
+  return q;
 }
 
 // ─── Linking metrics (provider portal v2) ────────────────────────────────────────

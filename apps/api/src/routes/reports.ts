@@ -3,6 +3,7 @@ import type { Container } from '../config/container';
 import { authenticate, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
+import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import {
   submitReportSchema,
   respondToReportSchema,
@@ -47,13 +48,13 @@ export function reportsRouter(container: Container) {
     auditLog('provider_viewed_report_inbox', 'report'),
     async (req, res, next) => {
       try {
-        const { page, limit, ...filters } = req.query as unknown as {
-          page: number; limit: number;
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const { status, patient_id, from, to, urgency } = req.query as unknown as {
           status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
           patient_id?: string; from?: string; to?: string;
           urgency?: 'routine' | 'concerning' | 'urgent';
         };
-        const result = await ProviderInbox.execute(container, { providerId: req.user!.id, page, limit, ...filters });
+        const result = await ProviderInbox.execute(container, { providerId: req.user!.id, limit, offset, sortBy: sortBy as ProviderInbox.ProviderInboxInput['sortBy'], sortOrder, status, patient_id, from, to, urgency });
         res.json({ data: result.items, meta: result.meta });
       } catch (err) { next(err); }
     },
@@ -85,14 +86,14 @@ export function reportsRouter(container: Container) {
     auditLog('patient_viewed_own_reports', 'report'),
     async (req, res, next) => {
       try {
-        const { page, limit, urgency, from, to } = req.query as unknown as {
-          page: number; limit: number;
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const { urgency, from, to } = req.query as unknown as {
           urgency?: 'routine' | 'concerning' | 'urgent';
           from?: string; to?: string;
         };
         const result = await PatientInbox.execute(container, {
           patientId: req.user!.id,
-          page, limit, urgency, from, to,
+          limit, offset, sortBy: sortBy as PatientInbox.PatientInboxInput['sortBy'], sortOrder, urgency, from, to,
         });
         res.json({ data: result.items, meta: result.meta });
       } catch (err) { next(err); }
@@ -110,9 +111,10 @@ export function reportsRouter(container: Container) {
       try {
         if (req.user!.role === 'patient') {
           const data = await ListRequests.executeForPatient(container, req.user!.id);
-          res.json({ data });
+          res.json(buildListResponse(data, data.length, 0));
           return;
         }
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
         const { status, patient_id } = req.query as unknown as {
           status?: 'pending' | 'fulfilled' | 'dismissed';
           patient_id?: string;
@@ -121,8 +123,12 @@ export function reportsRouter(container: Container) {
           providerId: req.user!.id,
           patientId: patient_id,
           status,
+          limit,
+          offset,
+          sortBy: sortBy as ListRequests.ListProviderRequestsInput['sortBy'],
+          sortOrder,
         });
-        res.json({ data });
+        res.json(buildListResponse(data, limit, offset, undefined, sortBy, sortOrder));
       } catch (err) { next(err); }
     },
   );

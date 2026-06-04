@@ -3,12 +3,21 @@ import { listJobHistory, countJobHistory } from '../../db/queries/admin.queries'
 
 type Deps = Pick<Container, 'db'>;
 
-export type Input = { jobName: string; page: number; limit: number };
+type SortOrder = 'asc' | 'desc';
+
+export type Input = {
+  jobName: string;
+  limit: number;
+  offset: number;
+  sortBy?: 'started_at' | 'status' | 'duration_ms';
+  sortOrder?: SortOrder;
+};
 
 export async function execute(deps: Deps, input: Input) {
+  const { jobName, limit, offset, sortBy, sortOrder = 'desc' } = input;
   const [items, total] = await Promise.all([
-    listJobHistory(deps.db, input.jobName, input.page, input.limit),
-    countJobHistory(deps.db, input.jobName),
+    listJobHistory(deps.db, jobName, limit, offset, sortBy, sortOrder),
+    countJobHistory(deps.db, jobName),
   ]);
-  return { items, meta: { page: input.page, limit: input.limit, total } };
+  return { items, meta: { limit, offset, total, hasMore: offset + limit < total, sortBy, sortOrder } };
 }

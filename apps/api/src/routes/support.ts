@@ -3,7 +3,8 @@ import type { Container } from '../config/container';
 import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
-import { createSupportTicketSchema } from '@tmjconnect/shared';
+import { createSupportTicketSchema, supportTicketListQuerySchema } from '@tmjconnect/shared';
+import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import * as CreateTicket from '../use-cases/support/create-ticket';
 import * as ListTickets from '../use-cases/support/list-tickets';
 
@@ -30,10 +31,11 @@ export function supportRouter(container: Container) {
     },
   );
 
-  router.get('/tickets', auditLog('support_tickets_viewed', 'support_ticket'), async (req, res, next) => {
+  router.get('/tickets', validate(supportTicketListQuerySchema, 'query'), auditLog('support_tickets_viewed', 'support_ticket'), async (req, res, next) => {
     try {
-      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
-      res.json({ data: await ListTickets.execute(container, { userId: req.user!.id, limit }) });
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const result = await ListTickets.execute(container, { userId: req.user!.id, limit, offset, sortBy: sortBy as ListTickets.ListTicketsInput['sortBy'], sortOrder });
+      res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
     } catch (err) { next(err); }
   });
 

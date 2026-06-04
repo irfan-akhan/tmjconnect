@@ -3,6 +3,7 @@ import type { Container } from '../config/container';
 import { authenticate, authorize, checkSessionTimeout } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
+import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import {
   updateProviderProfileSchema,
   patientListQuerySchema,
@@ -98,8 +99,8 @@ export function providersRouter(container: Container) {
     auditLog('provider_listed_patients', 'user'),
     async (req, res, next) => {
       try {
-        const { page, limit, search } = req.query as unknown as { page: number; limit: number; search?: string };
-        const result = await ListPatients.execute(container, { providerId: req.user!.id, page, limit, search });
+        const { limit, offset, search, sortBy, sortOrder } = parseListQuery(req.query);
+        const result = await ListPatients.execute(container, { providerId: req.user!.id, limit, offset, search, sortBy: sortBy as ListPatients.ListPatientsInput['sortBy'], sortOrder });
         res.json({ data: result.items, meta: result.meta });
       } catch (err) { next(err); }
     },
@@ -211,9 +212,8 @@ export function providersRouter(container: Container) {
     auditLog('provider_viewed_patient_reports', 'report'),
     async (req, res, next) => {
       try {
-        const { page, limit, status, urgency, from, to } = req.query as unknown as {
-          page: number;
-          limit: number;
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const { status, urgency, from, to } = req.query as unknown as {
           status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
           urgency?: 'routine' | 'concerning' | 'urgent';
           from?: string;
@@ -222,8 +222,10 @@ export function providersRouter(container: Container) {
         const result = await ListPatientReports.execute(container, {
           providerId: req.user!.id,
           patientId: req.params.patientId,
-          page,
           limit,
+          offset,
+          sortBy: sortBy as ListPatientReports.ListPatientReportsInput['sortBy'],
+          sortOrder,
           status,
           urgency,
           from,
@@ -237,7 +239,9 @@ export function providersRouter(container: Container) {
   // ─── Sessions (security UI) ─────────────────────────────────────────────────
   router.get('/me/sessions', auditLog('provider_sessions_viewed', 'session'), async (req, res, next) => {
     try {
-      res.json({ data: await ListSessions.execute(container, { userId: req.user!.id }) });
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const result = await ListSessions.execute(container, { userId: req.user!.id, limit, offset, sortBy: sortBy as ListSessions.ListSessionsInput['sortBy'], sortOrder });
+      res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
     } catch (err) { next(err); }
   });
 
@@ -258,17 +262,23 @@ export function providersRouter(container: Container) {
   // ─── Activity log (provider-facing audit trail) ──────────────────────────────
   router.get('/me/activity', auditLog('provider_activity_viewed', 'user'), async (req, res, next) => {
     try {
-      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
-      const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
-      const result = await ListActivity.execute(container, { userId: req.user!.id, limit, offset });
-      res.json({ data: result.items, meta: { limit, offset, hasMore: result.hasMore } });
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const result = await ListActivity.execute(container, { userId: req.user!.id, limit, offset, sortBy: sortBy as ListActivity.ListActivityInput['sortBy'], sortOrder });
+      res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
     } catch (err) { next(err); }
   });
 
   // ─── Patient assignments (provider manages) ─────────────────────────────────
   router.get('/patients/:patientId/assignments', auditLog('provider_viewed_patient_assignments', 'exercise_assignment'), async (req, res, next) => {
     try {
-      res.json({ data: await ListPatientAssignments.execute(container, { providerId: req.user!.id, patientId: req.params.patientId }) });
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const result = await ListPatientAssignments.execute(container, {
+        providerId: req.user!.id,
+        patientId: req.params.patientId,
+        limit,
+        offset,
+      });
+      res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
     } catch (err) { next(err); }
   });
 
@@ -301,8 +311,9 @@ export function providersRouter(container: Container) {
   // ─── Exercise library ────────────────────────────────────────────────────────
   router.get('/exercises', validate(exerciseListQuerySchema, 'query'), auditLog('provider_exercises_viewed', 'exercise'), async (req, res, next) => {
     try {
-      const { page, limit, category } = req.query as unknown as { page: number; limit: number; category?: string };
-      const result = await ListExercises.execute(container, { providerId: req.user!.id, page, limit, category });
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const category = req.query.category as string | undefined;
+      const result = await ListExercises.execute(container, { providerId: req.user!.id, limit, offset, category, sortBy: sortBy as ListExercises.ListExercisesInput['sortBy'], sortOrder });
       res.json({ data: result.items, meta: result.meta });
     } catch (err) { next(err); }
   });
@@ -334,12 +345,14 @@ export function providersRouter(container: Container) {
     auditLog('provider_listed_notes', 'clinical_note'),
     async (req, res, next) => {
       try {
-        const { page, limit } = req.query as unknown as { page: number; limit: number };
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
         const result = await ListPatientNotes.execute(container, {
           providerId: req.user!.id,
           patientId: req.params.patientId,
-          page,
           limit,
+          offset,
+          sortBy: sortBy as ListPatientNotes.ListPatientNotesInput['sortBy'],
+          sortOrder,
         });
         res.json({ data: result.items, meta: result.meta });
       } catch (err) { next(err); }

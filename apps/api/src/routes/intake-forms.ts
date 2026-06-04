@@ -2,6 +2,9 @@ import { Router } from 'express';
 import type { Container } from '../config/container';
 import { authenticate, authorize, checkSessionTimeout } from '../middleware/auth';
 import { auditLog } from '../middleware/audit';
+import { validate } from '../middleware/validate';
+import { parseListQuery, buildListResponse } from '../utils/listHelpers';
+import { intakeAssignmentListQuerySchema, intakeFormListQuerySchema, intakeResponseListQuerySchema } from '@tmjconnect/shared';
 import {
   createForm, updateForm, deleteForm, listForms, getForm,
   assignForm, listAssignmentsByPatient, listResponsesByForm,
@@ -28,11 +31,13 @@ export function intakeFormsRouter(container: Container) {
 
   router.get('/',
     authorize('provider'), checkSessionTimeout(container.db),
+    validate(intakeFormListQuerySchema, 'query'),
     auditLog('intake_forms_listed', 'intake_form'),
     async (req, res, next) => {
       try {
-        const data = await listForms(container.db, req.user!.id);
-        res.json({ data });
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const data = await listForms(container.db, req.user!.id, limit, offset, sortBy as 'updated_at' | 'created_at' | 'title' | 'status' | undefined, sortOrder);
+        res.json(buildListResponse(data, limit, offset, undefined, sortBy, sortOrder));
       } catch (err) { next(err); }
     },
   );
@@ -86,11 +91,13 @@ export function intakeFormsRouter(container: Container) {
 
   router.get('/:formId/responses',
     authorize('provider'), checkSessionTimeout(container.db),
+    validate(intakeResponseListQuerySchema, 'query'),
     auditLog('intake_responses_viewed', 'intake_response'),
     async (req, res, next) => {
       try {
-        const data = await listResponsesByForm(container.db, req.user!.id, req.params.formId);
-        res.json({ data });
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const data = await listResponsesByForm(container.db, req.user!.id, req.params.formId, limit, offset, sortBy as 'submitted_at' | 'patient_name' | undefined, sortOrder);
+        res.json(buildListResponse(data, limit, offset, undefined, sortBy, sortOrder));
       } catch (err) { next(err); }
     },
   );
@@ -99,11 +106,13 @@ export function intakeFormsRouter(container: Container) {
 
   router.get('/assignments/mine',
     authorize('patient'),
+    validate(intakeAssignmentListQuerySchema, 'query'),
     auditLog('patient_intake_assignments_viewed', 'intake_form_assignment'),
     async (req, res, next) => {
       try {
-        const data = await listAssignmentsByPatient(container.db, req.user!.id);
-        res.json({ data });
+        const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+        const data = await listAssignmentsByPatient(container.db, req.user!.id, limit, offset, sortBy as 'assigned_at' | 'form_title' | 'provider_name' | undefined, sortOrder);
+        res.json(buildListResponse(data, limit, offset, undefined, sortBy, sortOrder));
       } catch (err) { next(err); }
     },
   );

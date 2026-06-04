@@ -15,12 +15,11 @@ type DbClient = Db['db'];
 
 export async function getProviderPerformance(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   sort: string,
   order: string,
 ) {
-  const offset = (page - 1) * limit;
   const orderDir = order === 'asc' ? sql`ASC NULLS LAST` : sql`DESC NULLS LAST`;
 
   // Dynamic ORDER BY — only allow whitelisted sort columns.
@@ -87,12 +86,10 @@ export async function countProviders(db: DbClient) {
 
 export async function getPatientEngagement(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   tier?: string,
 ) {
-  const offset = (page - 1) * limit;
-
   // Tier definitions:
   // highly_active: logged in AND symptom log within 7 days
   // occasional: logged in within 30 days
@@ -286,11 +283,10 @@ export async function getLinkingSummary(db: DbClient) {
 
 export async function listAdminLinkingCodes(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   status?: string,
 ) {
-  const offset = (page - 1) * limit;
   return db.execute(sql`
     SELECT
       lc.id, lc.code, lc.status, lc.expires_at::text, lc.created_at::text,
@@ -318,11 +314,10 @@ export async function countAdminLinkingCodes(db: DbClient, status?: string) {
 
 export async function listAdminLinks(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   status?: string,
 ) {
-  const offset = (page - 1) * limit;
   const statusFilter = status === 'active'
     ? sql`AND ppl.unlinked_at IS NULL`
     : status === 'disconnected'
@@ -640,8 +635,7 @@ export async function createBroadcast(
   return result;
 }
 
-export async function listBroadcasts(db: DbClient, page: number, limit: number) {
-  const offset = (page - 1) * limit;
+export async function listBroadcasts(db: DbClient, limit: number, offset: number) {
   return db.execute(sql`
     SELECT b.id, b.audience, b.type, b.title, b.body, b.channels, b.recipient_count,
            b.scheduled_at::text, b.sent_at::text, b.created_at::text,
@@ -714,8 +708,7 @@ export async function createScheduledReport(
   return result;
 }
 
-export async function listScheduledReports(db: DbClient, page: number, limit: number) {
-  const offset = (page - 1) * limit;
+export async function listScheduledReports(db: DbClient, limit: number, offset: number) {
   return db.execute(sql`
     SELECT sr.id, sr.name, sr.entity, sr.filters, sr.cadence, sr.recipient_emails,
            sr.next_run_at::text, sr.last_run_at::text, sr.enabled, sr.created_at::text,

@@ -5,26 +5,31 @@
  * provider_id); if this file is ever reused for a patient-accessible path,
  * replace scopeToUser with an explicit patient_id filter.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { clinicalNotes } from '../schema';
 import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
+type SortOrder = 'asc' | 'desc';
 
 export async function listNotesForPatient(
   db: DbClient,
   patientId: string,
   provider: ScopedUser,
-  page: number,
   limit: number,
+  offset: number,
+  sortBy: 'created_at' | 'updated_at' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
+  const column = sortBy === 'updated_at' ? clinicalNotes.updated_at : clinicalNotes.created_at;
+  const orderBy = sortOrder === 'asc' ? asc(column) : desc(column);
+
   return db
     .select()
     .from(clinicalNotes)
     .where(scopeToUser(eq(clinicalNotes.patient_id, patientId), clinicalNotes, provider))
-    .orderBy(desc(clinicalNotes.created_at))
+    .orderBy(orderBy, desc(clinicalNotes.created_at))
     .limit(limit)
     .offset(offset);
 }

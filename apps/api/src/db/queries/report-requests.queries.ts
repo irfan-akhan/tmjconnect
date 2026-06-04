@@ -1,33 +1,51 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { reportRequests } from '../schema';
 import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
+type SortOrder = 'asc' | 'desc';
+
+function reportRequestOrder(sortBy: 'created_at' | 'status' = 'created_at', sortOrder: SortOrder = 'desc') {
+  const column = sortBy === 'status' ? reportRequests.status : reportRequests.created_at;
+  return sortOrder === 'asc' ? asc(column) : desc(column);
+}
 
 export async function listRequestsByProvider(
   db: DbClient,
   provider: ScopedUser,
   status?: 'pending' | 'fulfilled' | 'dismissed',
+  limit = 10,
+  offset = 0,
+  sortBy: 'created_at' | 'status' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
   const baseCondition = status ? eq(reportRequests.status, status) : undefined;
   return db
     .select()
     .from(reportRequests)
     .where(scopeToUser(baseCondition, reportRequests, provider))
-    .orderBy(desc(reportRequests.created_at));
+    .orderBy(reportRequestOrder(sortBy, sortOrder), desc(reportRequests.created_at))
+    .limit(limit)
+    .offset(offset);
 }
 
 export async function listRequestsForPatientByProvider(
   db: DbClient,
   patientId: string,
   provider: ScopedUser,
+  limit = 10,
+  offset = 0,
+  sortBy: 'created_at' | 'status' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
   return db
     .select()
     .from(reportRequests)
     .where(scopeToUser(eq(reportRequests.patient_id, patientId), reportRequests, provider))
-    .orderBy(desc(reportRequests.created_at));
+    .orderBy(reportRequestOrder(sortBy, sortOrder), desc(reportRequests.created_at))
+    .limit(limit)
+    .offset(offset);
 }
 
 export async function listPendingRequestsForPatient(db: DbClient, patient: ScopedUser) {

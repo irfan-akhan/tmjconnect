@@ -5,41 +5,39 @@ import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from '../config/constants';
 // Response includes total count (useful for pagination UI).
 
 export interface OffsetPaginationParams {
-  page: number;
   limit: number;
   offset: number;
 }
 
 /**
- * parsePagination(query) — Extracts and clamps page/limit from query params.
- * Returns { page, limit, offset } for use in Drizzle .limit() and .offset().
+ * parsePagination(query) — Extracts and clamps offset/limit from query params.
+ * Returns { limit, offset } for use in Drizzle .limit() and .offset().
  */
 export function parsePagination(query: {
-  page?: string | number;
   limit?: string | number;
+  offset?: string | number;
 }): OffsetPaginationParams {
-  const page = Math.max(1, parseInt(String(query.page ?? 1), 10) || 1);
   const limit = Math.min(
     MAX_PAGE_LIMIT,
     Math.max(1, parseInt(String(query.limit ?? DEFAULT_PAGE_LIMIT), 10) || DEFAULT_PAGE_LIMIT),
   );
-  const offset = (page - 1) * limit;
-  return { page, limit, offset };
+  const offset = Math.max(0, parseInt(String(query.offset ?? 0), 10) || 0);
+  return { limit, offset };
 }
 
 /**
- * buildOffsetMeta(total, page, limit) — Builds the pagination meta for list responses.
+ * buildOffsetMeta(total, offset, limit) — Builds the pagination meta for list responses.
  */
 export function buildOffsetMeta(
   total: number,
-  page: number,
+  offset: number,
   limit: number,
-): { total: number; page: number; limit: number; hasMore: boolean } {
+): { total: number; offset: number; limit: number; hasMore: boolean } {
   return {
     total,
-    page,
+    offset,
     limit,
-    hasMore: page * limit < total,
+    hasMore: offset + limit < total,
   };
 }
 

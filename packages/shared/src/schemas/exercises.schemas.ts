@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { freeText, optionalFreeText } from '../utils/zodHelpers';
+import { commonListQuerySchema } from './common.schemas';
 
 // ─── Exercise ─────────────────────────────────────────────────────────────────────
 export const createExerciseSchema = z.object({
@@ -28,9 +29,13 @@ export const updateAssignmentSchema = z.object({
   status: z.enum(['active', 'paused', 'completed']).optional(),
 });
 
-// ─── Exercise list query ───────────────────────────────────────────────────────────
-export const exerciseListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+// ─── Exercise list query (provider side) ───────────────────────────────────────────────────────────
+export const exerciseListQuerySchema = commonListQuerySchema.extend({
   category: z.string().max(100).optional(),
+  sortBy: z.enum(['created_at', 'title', 'category']).optional(),
+});
+
+// ─── Assignment list query (patient side) ────────────────────────────────────────────────────────
+export const assignmentListQuerySchema = commonListQuerySchema.extend({
+  status: z.enum(['active', 'paused', 'completed']).optional(),
 });

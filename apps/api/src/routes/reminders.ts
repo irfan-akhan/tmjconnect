@@ -3,7 +3,8 @@ import type { Container } from '../config/container';
 import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
-import { createReminderSchema, updateReminderSchema } from '@tmjconnect/shared';
+import { createReminderSchema, updateReminderSchema, reminderListQuerySchema } from '@tmjconnect/shared';
+import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import * as List from '../use-cases/reminders/list';
 import * as Create from '../use-cases/reminders/create';
 import * as Update from '../use-cases/reminders/update';
@@ -13,11 +14,25 @@ export function remindersRouter(container: Container) {
   const router = Router();
   router.use(authenticate);
 
-  router.get('/', auditLog('reminders_viewed', 'reminder'), async (req, res, next) => {
-    try {
-      res.json({ data: await List.execute(container, { user: req.user! }) });
-    } catch (err) { next(err); }
-  });
+  router.get(
+    '/',
+    validate(reminderListQuerySchema, 'query'),
+    auditLog('reminders_viewed', 'reminder'),
+    async (req, res, next) => {
+      try {
+        const baseParams = parseListQuery(req.query);
+        const type = req.query.type as string | undefined;
+        const enabled = req.query.enabled === 'true' ? true : req.query.enabled === 'false' ? false : undefined;
+        const data = await List.execute(container, {
+          user: req.user!,
+          ...baseParams,
+          type,
+          enabled,
+        });
+        res.json(buildListResponse(data, baseParams.limit, baseParams.offset, undefined, baseParams.sortBy, baseParams.sortOrder));
+      } catch (err) { next(err); }
+    },
+  );
 
   router.post('/', validate(createReminderSchema), auditLog('reminder_created', 'reminder'), async (req, res, next) => {
     try {

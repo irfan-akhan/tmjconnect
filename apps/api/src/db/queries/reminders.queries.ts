@@ -1,19 +1,46 @@
 /**
  * reminders.queries.ts — All database interactions for the reminders module.
  */
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { reminders, profiles } from '../schema';
 import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
 
-export async function listReminders(db: DbClient, user: ScopedUser) {
-  return db
+export async function listReminders(
+  db: DbClient,
+  user: ScopedUser,
+  options?: {
+    limit?: number;
+    offset?: number;
+    type?: string;
+    enabled?: boolean;
+  },
+) {
+  let whereConditions: any[] = [scopeToUser(undefined, reminders, user)];
+
+  if (options?.type) {
+    whereConditions.push(eq(reminders.type, options.type as any));
+  }
+  if (options?.enabled !== undefined) {
+    whereConditions.push(eq(reminders.enabled, options.enabled));
+  }
+
+  let query = db
     .select()
     .from(reminders)
-    .where(scopeToUser(undefined, reminders, user))
+    .where(and(...whereConditions))
     .orderBy(desc(reminders.created_at));
+
+  if (options?.limit) {
+    (query as any) = query.limit(options.limit);
+  }
+  if (options?.offset !== undefined) {
+    (query as any) = query.offset(options.offset);
+  }
+
+  return query;
 }
 
 export async function findReminder(db: DbClient, id: string, user: ScopedUser) {

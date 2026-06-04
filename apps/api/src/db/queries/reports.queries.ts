@@ -15,6 +15,11 @@ import { reports, reportResponses, idempotencyKeys, profiles } from '../schema';
 import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
+type SortOrder = 'asc' | 'desc';
+
+function sortDirection(sortOrder: SortOrder = 'desc') {
+  return sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
+}
 
 // ─── Idempotency ─────────────────────────────────────────────────────────────────
 
@@ -208,12 +213,19 @@ function buildReportFilters(providerId: string, filters: InboxFilters) {
 export async function listProviderReports(
   db: DbClient,
   providerId: string,
-  page: number,
   limit: number,
+  offset: number,
   filters: InboxFilters,
+  sortBy: 'created_at' | 'urgency' | 'status' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
   const where = buildReportFilters(providerId, filters);
+  const orderBy = {
+    created_at: sql`r.submitted_at`,
+    urgency: sql`CASE r.urgency WHEN 'urgent' THEN 1 WHEN 'concerning' THEN 2 ELSE 3 END`,
+    status: sql`r.status`,
+  }[sortBy] ?? sql`r.submitted_at`;
+  const orderDir = sortDirection(sortOrder);
 
   const result = await db.execute<InboxRow>(sql`
     SELECT
@@ -226,9 +238,7 @@ export async function listProviderReports(
     FROM reports r
     JOIN profiles p ON p.user_id = r.patient_id
     WHERE ${where}
-    ORDER BY
-      CASE r.urgency WHEN 'urgent' THEN 1 WHEN 'concerning' THEN 2 ELSE 3 END,
-      r.submitted_at DESC
+    ORDER BY ${orderBy} ${orderDir}, r.submitted_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `);
@@ -272,12 +282,18 @@ function buildPatientReportFilters(patientId: string, filters: PatientReportFilt
 export async function listMyReports(
   db: DbClient,
   patientId: string,
-  page: number,
   limit: number,
+  offset: number,
   filters: PatientReportFilters,
+  sortBy: 'created_at' | 'urgency' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
   const where = buildPatientReportFilters(patientId, filters);
+  const orderBy = {
+    created_at: sql`r.submitted_at`,
+    urgency: sql`CASE r.urgency WHEN 'urgent' THEN 1 WHEN 'concerning' THEN 2 ELSE 3 END`,
+  }[sortBy] ?? sql`r.submitted_at`;
+  const orderDir = sortDirection(sortOrder);
 
   const result = await db.execute<PatientInboxRow>(sql`
     SELECT
@@ -291,7 +307,7 @@ export async function listMyReports(
     FROM reports r
     JOIN profiles p ON p.user_id = r.provider_id
     WHERE ${where}
-    ORDER BY r.submitted_at DESC
+    ORDER BY ${orderBy} ${orderDir}, r.submitted_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `);

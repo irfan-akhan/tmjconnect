@@ -9,7 +9,7 @@
  * audit layer is structured.
  */
 
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Container } from '../../config/container';
 import { auditLogs } from '../../db/schema';
 import { getActivityEventConfig } from '../../utils/activity-event-map';
@@ -42,9 +42,14 @@ export type ListActivityInput = {
   userId: string;
   limit: number;
   offset: number;
+  sortBy?: 'created_at' | 'action';
+  sortOrder?: 'asc' | 'desc';
 };
 
 export async function execute(deps: Deps, input: ListActivityInput) {
+  const sortColumn = input.sortBy === 'action' ? auditLogs.action : auditLogs.created_at;
+  const orderBy = input.sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn);
+
   const rows = await deps.db
     .select({
       id: auditLogs.id,
@@ -61,7 +66,7 @@ export async function execute(deps: Deps, input: ListActivityInput) {
         inArray(auditLogs.action, PATIENT_VISIBLE_ACTIONS as unknown as string[]),
       ),
     )
-    .orderBy(desc(auditLogs.created_at))
+    .orderBy(orderBy, desc(auditLogs.created_at))
     .limit(input.limit + 1)
     .offset(input.offset);
 

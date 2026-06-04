@@ -3,9 +3,13 @@ import { listAuditLogs, countAuditLogs } from '../../db/queries/admin.queries';
 
 type Deps = Pick<Container, 'db'>;
 
+type SortOrder = 'asc' | 'desc';
+
 export type ListAuditLogsInput = {
-  page: number;
   limit: number;
+  offset: number;
+  sortBy?: 'created_at' | 'action' | 'resource_type';
+  sortOrder?: SortOrder;
   user_id?: string;
   action?: string;
   resource_type?: string;
@@ -14,10 +18,10 @@ export type ListAuditLogsInput = {
 };
 
 export async function execute(deps: Deps, input: ListAuditLogsInput) {
-  const { page, limit, ...filters } = input;
+  const { limit, offset, sortBy, sortOrder = 'desc', ...filters } = input;
   const [items, total] = await Promise.all([
-    listAuditLogs(deps.db, page, limit, filters),
+    listAuditLogs(deps.db, limit, offset, filters, sortBy, sortOrder),
     countAuditLogs(deps.db, filters),
   ]);
-  return { items, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  return { items, meta: { limit, offset, total, hasMore: offset + limit < total, sortBy, sortOrder } };
 }

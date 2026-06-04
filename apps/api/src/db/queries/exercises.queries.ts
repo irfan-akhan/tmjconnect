@@ -8,8 +8,17 @@ import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
 
-export async function listActiveAssignments(db: DbClient, user: ScopedUser) {
-  return db
+export async function listAssignments(
+  db: DbClient,
+  user: ScopedUser,
+  options?: { status?: string; limit?: number; offset?: number },
+) {
+  const whereConditions: any[] = [scopeToUser(undefined, exerciseAssignments, user)];
+  if (options?.status) {
+    whereConditions.push(eq(exerciseAssignments.status, options.status as any));
+  }
+
+  let query = db
     .select({
       assignment_id: exerciseAssignments.id,
       patient_id: exerciseAssignments.patient_id,
@@ -28,16 +37,9 @@ export async function listActiveAssignments(db: DbClient, user: ScopedUser) {
       sets: exerciseAssignments.sets,
       status: exerciseAssignments.status,
       assigned_at: exerciseAssignments.assigned_at,
-      // Provider attribution — so the patient knows who gave them this.
-      // We always show the current name via the JOIN; if the link has since
-      // been disconnected the historical attribution stays on the card.
       provider_id: exerciseAssignments.provider_id,
       provider_first_name: profiles.first_name,
       provider_last_name: profiles.last_name,
-      // Did the patient already mark this assignment complete today? We use a
-      // correlated EXISTS subquery — the completions table has a UNIQUE
-      // constraint on (assignment_id, patient_id, DATE(completed_at)) so there
-      // is at most one row per assignment per day.
       completed_today: sql<boolean>`EXISTS (
         SELECT 1 FROM ${exerciseCompletions}
         WHERE ${exerciseCompletions.assignment_id} = ${exerciseAssignments.id}
@@ -47,8 +49,17 @@ export async function listActiveAssignments(db: DbClient, user: ScopedUser) {
     .from(exerciseAssignments)
     .innerJoin(exercises, eq(exerciseAssignments.exercise_id, exercises.id))
     .innerJoin(profiles, eq(profiles.user_id, exerciseAssignments.provider_id))
-    .where(scopeToUser(eq(exerciseAssignments.status, 'active'), exerciseAssignments, user))
+    .where(and(...whereConditions))
     .orderBy(exerciseAssignments.assigned_at);
+
+  if (options?.limit) {
+    (query as any) = query.limit(options.limit);
+  }
+  if (options?.offset !== undefined) {
+    (query as any) = query.offset(options.offset);
+  }
+
+  return query;
 }
 
 export async function findActiveAssignment(

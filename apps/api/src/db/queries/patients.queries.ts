@@ -2,7 +2,7 @@
  * Reusable patient queries used across patient routes.
  * All queries scope to a specific userId to prevent PHI leakage.
  */
-import { eq, and, isNull, desc, gt } from 'drizzle-orm';
+import { eq, and, isNull, asc, desc, gt } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import {
@@ -90,8 +90,17 @@ export async function deleteAccountTransaction(db: Db['db'], userId: string) {
 
 // ─── Sessions ──────────────────────────────────────────────────────────────────────
 
-export async function getActiveSessions(db: Db['db'], userId: string) {
-  return db
+export async function getActiveSessions(
+  db: Db['db'],
+  userId: string,
+  limit = 20,
+  offset = 0,
+  sortBy: 'login_at' | 'last_activity' = 'last_activity',
+  sortOrder: 'asc' | 'desc' = 'desc',
+) {
+  const column = sortBy === 'login_at' ? sessions.created_at : sessions.last_active;
+  const orderBy = sortOrder === 'asc' ? asc(column) : desc(column);
+  let q = db
     .select({
       id: sessions.id,
       user_id: sessions.user_id,
@@ -103,7 +112,10 @@ export async function getActiveSessions(db: Db['db'], userId: string) {
     })
     .from(sessions)
     .where(and(eq(sessions.user_id, userId), gt(sessions.expires_at, sql`NOW()`)))
-    .orderBy(desc(sessions.last_active));
+    .orderBy(orderBy, desc(sessions.last_active));
+  (q as any) = q.limit(limit);
+  (q as any) = q.offset(offset);
+  return q;
 }
 
 export async function deleteSessionById(

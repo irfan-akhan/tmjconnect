@@ -52,10 +52,27 @@ export async function deleteForm(db: DbClient, providerId: string, formId: strin
   return result;
 }
 
-export async function listForms(db: DbClient, providerId: string) {
-  return db.select().from(intakeForms)
+export async function listForms(
+  db: DbClient,
+  providerId: string,
+  limit = 20,
+  offset = 0,
+  sortBy: 'updated_at' | 'created_at' | 'title' | 'status' = 'updated_at',
+  sortOrder: 'asc' | 'desc' = 'desc',
+) {
+  const orderBy = {
+    updated_at: sql`updated_at`,
+    created_at: sql`created_at`,
+    title: sql`title`,
+    status: sql`status`,
+  }[sortBy] ?? sql`updated_at`;
+  const orderDir = sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
+  let q = db.select().from(intakeForms)
     .where(and(eq(intakeForms.provider_id, providerId), ne(intakeForms.status, 'archived')))
-    .orderBy(desc(intakeForms.updated_at));
+    .orderBy(sql`${orderBy} ${orderDir}`, desc(intakeForms.updated_at));
+  (q as any) = q.limit(limit);
+  (q as any) = q.offset(offset);
+  return q;
 }
 
 export async function getForm(db: DbClient, formId: string) {
@@ -76,7 +93,20 @@ export async function assignForm(db: DbClient, providerId: string, formId: strin
   return row;
 }
 
-export async function listAssignmentsByPatient(db: DbClient, patientId: string) {
+export async function listAssignmentsByPatient(
+  db: DbClient,
+  patientId: string,
+  limit = 20,
+  offset = 0,
+  sortBy: 'assigned_at' | 'form_title' | 'provider_name' = 'assigned_at',
+  sortOrder: 'asc' | 'desc' = 'desc',
+) {
+  const orderBy = {
+    assigned_at: sql`a.assigned_at`,
+    form_title: sql`f.title`,
+    provider_name: sql`provider_name`,
+  }[sortBy] ?? sql`a.assigned_at`;
+  const orderDir = sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
   type Row = {
     id: string; form_id: string; patient_id: string; provider_id: string; status: string; assigned_at: string; completed_at: string | null;
     form_title: string; form_description: string | null; form_fields: unknown;
@@ -90,13 +120,25 @@ export async function listAssignmentsByPatient(db: DbClient, patientId: string) 
     JOIN intake_forms f ON f.id = a.form_id
     LEFT JOIN profiles p ON p.user_id = a.provider_id
     WHERE a.patient_id = ${patientId} AND a.status = 'pending'
-    ORDER BY a.assigned_at DESC
+    ORDER BY ${orderBy} ${orderDir}, a.assigned_at DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
   `);
   const rows = Array.isArray(res) ? res : (res as { rows?: Row[] }).rows ?? [];
   return rows;
 }
 
-export async function listResponsesByForm(db: DbClient, providerId: string, formId: string) {
+export async function listResponsesByForm(
+  db: DbClient,
+  providerId: string,
+  formId: string,
+  limit = 20,
+  offset = 0,
+  sortBy: 'submitted_at' | 'patient_name' = 'submitted_at',
+  sortOrder: 'asc' | 'desc' = 'desc',
+) {
+  const orderBy = sortBy === 'patient_name' ? sql`patient_name` : sql`r.submitted_at`;
+  const orderDir = sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
   type Row = {
     id: string; assignment_id: string; form_id: string; patient_id: string; answers: unknown; submitted_at: string;
     patient_name: string;
@@ -108,7 +150,9 @@ export async function listResponsesByForm(db: DbClient, providerId: string, form
     JOIN intake_form_assignments a ON a.id = r.assignment_id
     LEFT JOIN profiles p ON p.user_id = r.patient_id
     WHERE r.form_id = ${formId} AND a.provider_id = ${providerId}
-    ORDER BY r.submitted_at DESC
+    ORDER BY ${orderBy} ${orderDir}, r.submitted_at DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
   `);
   const rows = Array.isArray(res) ? res : (res as { rows?: Row[] }).rows ?? [];
   return rows;

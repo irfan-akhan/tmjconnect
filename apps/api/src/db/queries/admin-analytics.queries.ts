@@ -144,12 +144,12 @@ async function getReportVolume(db: DbClient, days: number) {
 async function getResponseTimes(db: DbClient, days: number) {
   type Row = { date: string; avg_hours: string };
   const res = await db.execute<Row>(sql`
-    SELECT DATE(rr.created_at)::text AS date,
-           ROUND(AVG(EXTRACT(EPOCH FROM (rr.created_at - r.submitted_at)) / 3600)::numeric, 1)::text AS avg_hours
+    SELECT DATE(rr.responded_at)::text AS date,
+           ROUND(AVG(EXTRACT(EPOCH FROM (rr.responded_at - r.submitted_at)) / 3600)::numeric, 1)::text AS avg_hours
     FROM report_responses rr
     JOIN reports r ON r.id = rr.report_id
-    WHERE rr.created_at >= NOW() - (${days} || ' days')::interval
-    GROUP BY DATE(rr.created_at) ORDER BY date
+    WHERE rr.responded_at >= NOW() - (${days} || ' days')::interval
+    GROUP BY DATE(rr.responded_at) ORDER BY date
   `);
   const rows = Array.isArray(res) ? res : (res as { rows?: Row[] }).rows ?? [];
   return rows.map((r) => ({ date: r.date, avg_hours: parseFloat(r.avg_hours) }));
@@ -204,9 +204,9 @@ async function getProviderWorkload(db: DbClient, days: number) {
       COALESCE(p.first_name || ' ' || p.last_name, u.email) AS name,
       (SELECT COUNT(*) FROM patient_provider_links WHERE provider_id = u.id AND unlinked_at IS NULL)::text AS patient_count,
       (SELECT COUNT(*) FROM reports WHERE provider_id = u.id AND submitted_at >= NOW() - (${days} || ' days')::interval)::text AS reports_30d,
-      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (rr.created_at - r.submitted_at)) / 3600)::numeric, 1)::text
+      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (rr.responded_at - r.submitted_at)) / 3600)::numeric, 1)::text
        FROM report_responses rr JOIN reports r ON r.id = rr.report_id
-       WHERE r.provider_id = u.id AND rr.created_at >= NOW() - (${days} || ' days')::interval) AS avg_response_hours
+       WHERE r.provider_id = u.id AND rr.responded_at >= NOW() - (${days} || ' days')::interval) AS avg_response_hours
     FROM users u LEFT JOIN profiles p ON p.user_id = u.id
     WHERE u.role = 'provider' AND u.is_active = true
     ORDER BY patient_count DESC LIMIT 20

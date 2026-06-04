@@ -16,6 +16,11 @@ import {
 } from '../schema';
 
 type DbClient = Db['db'];
+type SortOrder = 'asc' | 'desc';
+
+function sortDirection(sortOrder: SortOrder = 'desc') {
+  return sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
+}
 
 // ─── Stats ───────────────────────────────────────────────────────────────────────
 
@@ -88,14 +93,24 @@ type UserListRow = {
   created_at: string;
 };
 
+const USER_SORT_COLUMNS = {
+  created_at: sql`u.created_at`,
+  email: sql`u.email`,
+  role: sql`u.role`,
+  is_active: sql`u.is_active`,
+};
+
 export async function listUsers(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   filters: UserFilters,
+  sortBy: keyof typeof USER_SORT_COLUMNS = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
   const where = buildUserFilters(filters);
+  const orderBy = USER_SORT_COLUMNS[sortBy] ?? USER_SORT_COLUMNS.created_at;
+  const orderDir = sortDirection(sortOrder);
 
   const result = await db.execute<UserListRow>(sql`
     SELECT
@@ -105,7 +120,7 @@ export async function listUsers(
     FROM users u
     LEFT JOIN profiles p ON p.user_id = u.id
     WHERE ${where}
-    ORDER BY u.created_at DESC
+    ORDER BY ${orderBy} ${orderDir}, u.created_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `);
@@ -205,12 +220,19 @@ function buildAuditFilters(filters: AuditFilters) {
 
 export async function listAuditLogs(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   filters: AuditFilters,
+  sortBy: 'created_at' | 'action' | 'resource_type' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
   const where = buildAuditFilters(filters);
+  const orderBy = {
+    created_at: sql`a.created_at`,
+    action: sql`a.action`,
+    resource_type: sql`a.resource_type`,
+  }[sortBy] ?? sql`a.created_at`;
+  const orderDir = sortDirection(sortOrder);
 
   return db.execute(sql`
     SELECT
@@ -219,7 +241,7 @@ export async function listAuditLogs(
       a.created_at::text AS created_at
     FROM audit_logs a
     WHERE ${where}
-    ORDER BY a.created_at DESC
+    ORDER BY ${orderBy} ${orderDir}, a.created_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
@@ -276,12 +298,19 @@ function buildLoginEventFilters(filters: LoginEventFilters) {
 
 export async function listLoginEvents(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   filters: LoginEventFilters,
+  sortBy: 'created_at' | 'email' | 'success' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
   const where = buildLoginEventFilters(filters);
+  const orderBy = {
+    created_at: sql`le.created_at`,
+    email: sql`le.email`,
+    success: sql`le.success`,
+  }[sortBy] ?? sql`le.created_at`;
+  const orderDir = sortDirection(sortOrder);
 
   return db.execute(sql`
     SELECT
@@ -290,7 +319,7 @@ export async function listLoginEvents(
       le.created_at::text AS created_at
     FROM login_events le
     WHERE ${where}
-    ORDER BY le.created_at DESC
+    ORDER BY ${orderBy} ${orderDir}, le.created_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
@@ -310,10 +339,18 @@ export async function countLoginEvents(db: DbClient, filters: LoginEventFilters)
 
 export async function listAllReports(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
+  sortBy: 'submitted_at' | 'urgency' | 'status' | 'pain_level' = 'submitted_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
+  const orderBy = {
+    submitted_at: sql`r.submitted_at`,
+    urgency: sql`r.urgency`,
+    status: sql`r.status`,
+    pain_level: sql`r.pain_level`,
+  }[sortBy] ?? sql`r.submitted_at`;
+  const orderDir = sortDirection(sortOrder);
 
   return db.execute(sql`
     SELECT
@@ -327,7 +364,7 @@ export async function listAllReports(
     FROM reports r
     LEFT JOIN profiles pp ON pp.user_id = r.patient_id
     LEFT JOIN profiles prp ON prp.user_id = r.provider_id
-    ORDER BY r.submitted_at DESC
+    ORDER BY ${orderBy} ${orderDir}, r.submitted_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
@@ -352,12 +389,10 @@ export async function countAllReports(
 // Update listAllReports to accept filters
 export async function listAllReportsFiltered(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   filters?: { urgency?: string; status?: string; unanswered_over_hours?: number },
 ) {
-  const offset = (page - 1) * limit;
-
   return db.execute(sql`
     SELECT
       r.id, r.patient_id, r.provider_id, r.urgency, r.status,
@@ -488,18 +523,25 @@ export async function getOutboxStats(db: DbClient) {
 
 export async function listOutboxDlq(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   channel?: string,
+  sortBy: 'created_at' | 'next_attempt_at' | 'attempts' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
+  const orderBy = {
+    created_at: sql`created_at`,
+    next_attempt_at: sql`next_attempt_at`,
+    attempts: sql`attempts`,
+  }[sortBy] ?? sql`created_at`;
+  const orderDir = sortDirection(sortOrder);
   return db.execute(sql`
     SELECT id, user_id, channel::text, type, payload, attempts, max_attempts,
            next_attempt_at::text, last_error, created_at::text
     FROM notification_outbox
     WHERE sent_at IS NULL AND attempts >= max_attempts
     ${channel ? sql`AND channel = ${channel}` : sql``}
-    ORDER BY created_at DESC
+    ORDER BY ${orderBy} ${orderDir}, created_at DESC
     LIMIT ${limit} OFFSET ${offset}
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
 }
@@ -517,18 +559,25 @@ export async function countOutboxDlq(db: DbClient, channel?: string) {
 
 export async function listOutboxPending(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   channel?: string,
+  sortBy: 'created_at' | 'next_attempt_at' | 'attempts' = 'next_attempt_at',
+  sortOrder: SortOrder = 'asc',
 ) {
-  const offset = (page - 1) * limit;
+  const orderBy = {
+    created_at: sql`created_at`,
+    next_attempt_at: sql`next_attempt_at`,
+    attempts: sql`attempts`,
+  }[sortBy] ?? sql`next_attempt_at`;
+  const orderDir = sortDirection(sortOrder);
   return db.execute(sql`
     SELECT id, user_id, channel::text, type, payload, attempts, max_attempts,
            next_attempt_at::text, last_error, created_at::text
     FROM notification_outbox
     WHERE sent_at IS NULL AND attempts < max_attempts
     ${channel ? sql`AND channel = ${channel}` : sql``}
-    ORDER BY next_attempt_at ASC
+    ORDER BY ${orderBy} ${orderDir}, next_attempt_at ASC
     LIMIT ${limit} OFFSET ${offset}
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
 }
@@ -581,11 +630,19 @@ type SessionRow = {
 
 export async function listActiveSessions(
   db: DbClient,
-  page: number,
   limit: number,
+  offset: number,
   role?: string,
+  sortBy: 'last_active' | 'created_at' | 'user_email' | 'user_role' = 'last_active',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
+  const orderBy = {
+    last_active: sql`s.last_active`,
+    created_at: sql`s.created_at`,
+    user_email: sql`u.email`,
+    user_role: sql`u.role`,
+  }[sortBy] ?? sql`s.last_active`;
+  const orderDir = sortDirection(sortOrder);
   return db.execute<SessionRow>(sql`
     SELECT
       s.id, s.user_id, u.email AS user_email, u.role AS user_role,
@@ -595,7 +652,7 @@ export async function listActiveSessions(
     JOIN users u ON u.id = s.user_id
     WHERE s.expires_at > NOW()
     ${role ? sql`AND u.role = ${role}` : sql``}
-    ORDER BY s.last_active DESC
+    ORDER BY ${orderBy} ${orderDir}, s.last_active DESC
     LIMIT ${limit} OFFSET ${offset}
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
 }
@@ -741,16 +798,23 @@ export async function getJobSummaries(db: DbClient) {
 export async function listJobHistory(
   db: DbClient,
   jobName: string,
-  page: number,
   limit: number,
+  offset: number,
+  sortBy: 'started_at' | 'status' | 'duration_ms' = 'started_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
+  const orderBy = {
+    started_at: sql`started_at`,
+    status: sql`status`,
+    duration_ms: sql`duration_ms`,
+  }[sortBy] ?? sql`started_at`;
+  const orderDir = sortDirection(sortOrder);
   return db.execute(sql`
     SELECT id, job_name, status::text, started_at::text, finished_at::text,
            duration_ms, rows_affected, error_message, metadata
     FROM job_runs
     WHERE job_name = ${jobName}
-    ORDER BY started_at DESC
+    ORDER BY ${orderBy} ${orderDir}, started_at DESC
     LIMIT ${limit} OFFSET ${offset}
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
 }

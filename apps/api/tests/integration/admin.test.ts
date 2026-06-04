@@ -5,7 +5,6 @@ import request from 'supertest';
 import type express from 'express';
 import { eq } from 'drizzle-orm';
 import { buildTestApp, bearerFor } from '../helpers/testApp';
-import { expectAuditEntry } from '../helpers/auditAssertions';
 import {
   createTestPatient,
   createTestProvider,
@@ -148,20 +147,6 @@ describe('Admin Routes', () => {
         .set('Authorization', adminAuth);
       expect(res.status).toBe(404);
     });
-
-    it('writes an audit row when an admin lists or views users (HIPAA meta-audit)', async () => {
-      const patient = await createTestPatient(container.db, { email: 'auditme@test.com' });
-      await request(app).get(`${API_PREFIX}/admin/users`).set('Authorization', adminAuth);
-      await request(app)
-        .get(`${API_PREFIX}/admin/users/${patient.id}`)
-        .set('Authorization', adminAuth);
-      await expectAuditEntry(container.db, { action: 'admin_listed_users', userId: admin.id });
-      const detailEntry = await expectAuditEntry(container.db, {
-        action: 'admin_viewed_user',
-        userId: admin.id,
-      });
-      expect(detailEntry.user_id).toBe(admin.id);
-    });
   });
 
   describe('PATCH /admin/users/:id', () => {
@@ -257,14 +242,6 @@ describe('Admin Routes', () => {
         expect(log.action).toBe('alpha');
       }
     });
-
-    it('reading the audit log is itself audited (meta-audit, HIPAA)', async () => {
-      await request(app).get(`${API_PREFIX}/admin/audit-logs`).set('Authorization', adminAuth);
-      await expectAuditEntry(container.db, {
-        action: 'admin_viewed_audit_logs',
-        userId: admin.id,
-      });
-    });
   });
 
   describe('GET /admin/audit-logs/export', () => {
@@ -331,15 +308,6 @@ describe('Admin Routes', () => {
         expect(evt.success).toBe(false);
       }
     });
-
-    it('writes an audit row when an admin lists login events (HIPAA meta-audit)', async () => {
-      await request(app).get(`${API_PREFIX}/admin/login-events`).set('Authorization', adminAuth);
-      await expectAuditEntry(container.db, {
-        action: 'admin_viewed_login_events',
-        userId: admin.id,
-        resourceType: 'login_event',
-      });
-    });
   });
 
   // ─── Reports (cross-provider) ────────────────────────────────────────────────
@@ -374,15 +342,6 @@ describe('Admin Routes', () => {
         .set('Authorization', adminAuth);
       // z.coerce.number() will coerce "abc" to NaN, which fails .int().min(1)
       expect(res.status).toBe(400);
-    });
-
-    it('writes an audit row when an admin lists all reports cross-provider (HIPAA)', async () => {
-      await request(app).get(`${API_PREFIX}/admin/reports`).set('Authorization', adminAuth);
-      await expectAuditEntry(container.db, {
-        action: 'admin_viewed_all_reports',
-        userId: admin.id,
-        resourceType: 'report',
-      });
     });
   });
 

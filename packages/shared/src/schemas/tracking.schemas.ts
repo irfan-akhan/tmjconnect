@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { optionalFreeText } from '../utils/zodHelpers';
+import { commonListQuerySchema } from './common.schemas';
 
 // ─── Jaw Mobility ────────────────────────────────────────────────────────────────
 export const createMobilityLogSchema = z.object({
@@ -24,7 +25,7 @@ export const createSleepLogSchema = z.object({
   notes: optionalFreeText(1000),
 });
 
-// ─── Shared query params ─────────────────────────────────────────────────────────
+// ─── Shared query params (cursor-based) ──────────────────────────────────────────
 export const trackingListQuerySchema = z.object({
   cursor: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -32,4 +33,20 @@ export const trackingListQuerySchema = z.object({
 
 export const trackingTrendQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(30),
+});
+
+// ─── Offset-based list queries with filtering ────────────────────────────────────
+export const mobilityListQuerySchema = commonListQuerySchema.extend({
+  method: z.enum(['fingers', 'ruler', 'caliper']).optional(),
+  sortBy: z.enum(['logged_at', 'measurement_mm']).optional(),
+});
+
+export const medicationListQuerySchema = commonListQuerySchema.extend({
+  medication_name: z.string().max(120).optional(),
+  sortBy: z.enum(['logged_at', 'medication_name']).optional(),
+});
+
+export const sleepListQuerySchema = commonListQuerySchema.extend({
+  quality: z.coerce.number().int().min(1).max(5).optional(),
+  sortBy: z.enum(['logged_at', 'quality']).optional(),
 });

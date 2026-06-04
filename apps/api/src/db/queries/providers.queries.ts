@@ -16,6 +16,11 @@ import {
 } from '../schema';
 
 type DbClient = Db['db'];
+type SortOrder = 'asc' | 'desc';
+
+function sortDirection(sortOrder: SortOrder = 'desc') {
+  return sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
+}
 
 // ─── Provider profile ────────────────────────────────────────────────────────────
 
@@ -140,11 +145,20 @@ type PatientListRow = {
 export async function listLinkedPatients(
   db: DbClient,
   providerId: string,
-  page: number,
   limit: number,
+  offset: number,
   search?: string,
+  sortBy: 'linked_at' | 'last_symptom_at' | 'avg_pain_7d' | 'first_name' | 'last_name' = 'linked_at',
+  sortOrder: SortOrder = 'desc',
 ) {
-  const offset = (page - 1) * limit;
+  const orderBy = {
+    linked_at: sql`ppl.linked_at`,
+    last_symptom_at: sql`last_s.last_symptom_at`,
+    avg_pain_7d: sql`pain.avg_pain_7d`,
+    first_name: sql`p.first_name`,
+    last_name: sql`p.last_name`,
+  }[sortBy] ?? sql`ppl.linked_at`;
+  const orderDir = sortDirection(sortOrder);
 
   // LEFT JOIN LATERAL replaces the correlated sub-queries.
   // Each lateral is evaluated once per driving row rather than once per value
@@ -194,7 +208,7 @@ export async function listLinkedPatients(
       ) sub
     ) trend ON true
     WHERE ${buildPatientSearchFilter(providerId, search)}
-    ORDER BY ppl.linked_at DESC
+    ORDER BY ${orderBy} ${orderDir} NULLS LAST, ppl.linked_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `);
@@ -431,11 +445,18 @@ type RawExerciseListRow = typeof exercises.$inferSelect & {
 export async function listProviderExercises(
   db: DbClient,
   providerId: string,
-  page: number,
   limit: number,
+  offset: number,
   category?: string,
+  sortBy: 'created_at' | 'title' | 'category' = 'created_at',
+  sortOrder: SortOrder = 'desc',
 ): Promise<ProviderExerciseRow[]> {
-  const offset = (page - 1) * limit;
+  const orderBy = {
+    created_at: sql`e.created_at`,
+    title: sql`e.title`,
+    category: sql`e.category`,
+  }[sortBy] ?? sql`e.created_at`;
+  const orderDir = sortDirection(sortOrder);
   // Each lateral runs once per exercise row; cheap thanks to the FK index on
   // exercise_assignments.exercise_id.
   // completion_pct is the share of patient-days expected by active assignments
@@ -481,7 +502,7 @@ export async function listProviderExercises(
     ) comp ON true
     WHERE e.provider_id = ${providerId}
       ${category ? sql`AND e.category = ${category}` : sql``}
-    ORDER BY e.created_at DESC
+    ORDER BY ${orderBy} ${orderDir} NULLS LAST, e.created_at DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `);
@@ -573,8 +594,10 @@ export async function listPatientAssignments(
   db: DbClient,
   providerId: string,
   patientId: string,
+  limit = 50,
+  offset = 0,
 ) {
-  return db
+  let query = db
     .select({
       id: exerciseAssignments.id,
       exercise_id: exercises.id,
@@ -594,6 +617,10 @@ export async function listPatientAssignments(
       eq(exerciseAssignments.patient_id, patientId),
     ))
     .orderBy(desc(exerciseAssignments.assigned_at));
+
+  (query as any) = query.limit(limit);
+  (query as any) = query.offset(offset);
+  return query;
 }
 
 export async function insertAssignment(
