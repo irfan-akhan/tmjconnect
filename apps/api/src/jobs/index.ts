@@ -78,6 +78,22 @@ async function withAdvisoryLock(
   }
 }
 
+const runnableJobs = {
+  reminderJob: { lockId: 1, run: reminderJob },
+  codeExpiryJob: { lockId: 2, run: codeExpiryJob },
+  weeklyDigestJob: { lockId: 3, run: weeklyDigestJob },
+  cleanupJob: { lockId: 4, run: cleanupJob },
+  orphanFileCleanupJob: { lockId: 5, run: orphanFileCleanupJob },
+  outboxJob: { lockId: 6, run: outboxJob },
+} as const;
+
+export async function runJobNow(container: Container, jobName: string): Promise<boolean> {
+  const job = runnableJobs[jobName as keyof typeof runnableJobs];
+  if (!job) return false;
+  await withAdvisoryLock(container.pool, job.lockId, jobName, container.logger, container.db, () => job.run(container));
+  return true;
+}
+
 export function registerJobs(container: Container) {
   const { pool, db, logger } = container;
 

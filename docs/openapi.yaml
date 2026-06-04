@@ -5228,13 +5228,13 @@ paths:
               type: object
               required: [audience, type, title, body, channels]
               properties:
-                audience: { type: string, description: "e.g. all_patients, all_providers, role:admin" }
-                type: { type: string }
-                title: { type: string, minLength: 1, maxLength: 200 }
-                body: { type: string, minLength: 1, maxLength: 4000 }
+                audience: { type: string, enum: [all, patients, providers, admins] }
+                type: { type: string, enum: [announcement, system] }
+                title: { type: string, minLength: 1, maxLength: 255 }
+                body: { type: string, minLength: 1, maxLength: 2000 }
                 channels:
                   type: array
-                  items: { type: string, enum: [email, sms, push, in_app] }
+                  items: { type: string, enum: [email, in_app] }
                 scheduled_at: { type: [string, "null"], format: date-time }
       responses:
         '201':
