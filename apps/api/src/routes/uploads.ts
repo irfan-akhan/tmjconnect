@@ -9,6 +9,7 @@ import {
   MAX_VIDEO_SIZE_BYTES,
   MAX_AVATAR_SIZE_BYTES,
   MAX_REPORT_PHOTO_SIZE_BYTES,
+  MAX_THUMBNAIL_SIZE_BYTES,
   ALLOWED_VIDEO_MIMES,
   ALLOWED_IMAGE_MIMES,
 } from '../config/constants';
@@ -80,8 +81,10 @@ export function uploadsRouter(container: Container) {
   const videoUpload = createUpload(MAX_VIDEO_SIZE_BYTES, ALLOWED_VIDEO_MIMES);
   const avatarUpload = createUpload(MAX_AVATAR_SIZE_BYTES, ALLOWED_IMAGE_MIMES);
   const reportPhotoUpload = createUpload(MAX_REPORT_PHOTO_SIZE_BYTES, ALLOWED_IMAGE_MIMES);
+  const thumbnailUpload = createUpload(MAX_THUMBNAIL_SIZE_BYTES, ALLOWED_IMAGE_MIMES);
 
   router.post('/video', authorize('provider'), videoUpload.single('file'), auditLog('video_uploaded', 'exercise'), uploadHandler(container, 'videos', ALLOWED_VIDEO_MIMES));
+  router.post('/thumbnail', authorize('provider'), thumbnailUpload.single('file'), auditLog('thumbnail_uploaded', 'exercise'), uploadHandler(container, 'thumbnails', ALLOWED_IMAGE_MIMES));
   router.post('/avatar', avatarUpload.single('file'), auditLog('avatar_uploaded', 'user'), uploadHandler(container, 'avatars', ALLOWED_IMAGE_MIMES));
   router.post('/report-photo', reportPhotoUpload.single('file'), auditLog('report_photo_uploaded', 'report'), uploadHandler(container, 'report-photos', ALLOWED_IMAGE_MIMES));
 
