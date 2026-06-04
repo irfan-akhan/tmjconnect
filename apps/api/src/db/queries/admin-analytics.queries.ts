@@ -180,7 +180,7 @@ async function getEngagementFunnel(db: DbClient) {
   const res = await db.execute<Row>(sql`
     SELECT
       (SELECT COUNT(*) FROM users WHERE role = 'patient')::text AS total_users,
-      (SELECT COUNT(*) FROM users WHERE role = 'patient' AND email_verified_at IS NOT NULL)::text AS verified,
+      (SELECT COUNT(*) FROM users WHERE role = 'patient' AND email_verified = true)::text AS verified,
       (SELECT COUNT(*) FROM profiles p JOIN users u ON u.id = p.user_id WHERE u.role = 'patient' AND p.first_name IS NOT NULL)::text AS with_profile,
       (SELECT COUNT(DISTINCT patient_id) FROM symptom_logs WHERE logged_at >= NOW() - INTERVAL '7 days')::text AS active_7d,
       (SELECT COUNT(DISTINCT patient_id) FROM symptom_logs WHERE logged_at >= NOW() - INTERVAL '30 days')::text AS active_30d
