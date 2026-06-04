@@ -3,7 +3,7 @@
  */
 import { eq, and, sql, isNull, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
-import { linkingCodes, patientProviderLinks, profiles } from '../schema';
+import { linkingCodes, patientProviderLinks, profiles, users } from '../schema';
 
 type DbClient = Db['db'];
 
@@ -138,12 +138,15 @@ export async function listUserLinks(db: DbClient, userId: string, role: string) 
         patient_id: patientProviderLinks.patient_id,
         first_name: profiles.first_name,
         last_name: profiles.last_name,
+        avatar_url: profiles.avatar_url,
+        email: users.email,
         linked_at: patientProviderLinks.linked_at,
         consent_scope: patientProviderLinks.consent_scope,
         diagnosis: patientProviderLinks.diagnosis,
       })
       .from(patientProviderLinks)
       .innerJoin(profiles, eq(profiles.user_id, patientProviderLinks.patient_id))
+      .innerJoin(users, eq(users.id, patientProviderLinks.patient_id))
       .where(and(
         eq(patientProviderLinks.provider_id, userId),
         isNull(patientProviderLinks.unlinked_at),
@@ -158,11 +161,14 @@ export async function listUserLinks(db: DbClient, userId: string, role: string) 
       provider_id: patientProviderLinks.provider_id,
       first_name: profiles.first_name,
       last_name: profiles.last_name,
+      avatar_url: profiles.avatar_url,
+      email: users.email,
       linked_at: patientProviderLinks.linked_at,
       consent_scope: patientProviderLinks.consent_scope,
     })
     .from(patientProviderLinks)
     .innerJoin(profiles, eq(profiles.user_id, patientProviderLinks.provider_id))
+    .innerJoin(users, eq(users.id, patientProviderLinks.provider_id))
     .where(and(
       eq(patientProviderLinks.patient_id, userId),
       isNull(patientProviderLinks.unlinked_at),

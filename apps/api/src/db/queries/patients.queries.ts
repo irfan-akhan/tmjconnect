@@ -26,7 +26,10 @@ export async function getPatientWithProfile(db: Db['db'], userId: string) {
       email_verified: users.email_verified,
       mfa_enabled: users.mfa_enabled,
       fcm_token: users.fcm_token,
+      tos_accepted_at: users.tos_accepted_at,
+      tos_version: users.tos_version,
       created_at: users.created_at,
+      updated_at: users.updated_at,
       first_name: profiles.first_name,
       last_name: profiles.last_name,
       date_of_birth: profiles.date_of_birth,
@@ -35,6 +38,7 @@ export async function getPatientWithProfile(db: Db['db'], userId: string) {
       city: profiles.city,
       state: profiles.state,
       timezone: profiles.timezone,
+      profile_updated_at: profiles.updated_at,
     })
     .from(users)
     .innerJoin(profiles, eq(users.id, profiles.user_id))
@@ -90,9 +94,11 @@ export async function getActiveSessions(db: Db['db'], userId: string) {
   return db
     .select({
       id: sessions.id,
+      user_id: sessions.user_id,
       device_info: sessions.device_info,
       ip_address: sessions.ip_address,
       last_active: sessions.last_active,
+      expires_at: sessions.expires_at,
       created_at: sessions.created_at,
     })
     .from(sessions)

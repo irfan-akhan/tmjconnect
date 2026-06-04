@@ -134,6 +134,7 @@ export async function getReportForPatient(db: DbClient, reportId: string, patien
   const [row] = await db
     .select({
       id: reports.id,
+      patient_id: reports.patient_id,
       provider_id: reports.provider_id,
       urgency: reports.urgency,
       pain_level: reports.pain_level,
@@ -160,6 +161,8 @@ export async function getReportResponsesForPatient(db: DbClient, reportId: strin
   return db
     .select({
       id: reportResponses.id,
+      report_id: reportResponses.report_id,
+      provider_id: reportResponses.provider_id,
       message: reportResponses.message,
       responded_at: reportResponses.responded_at,
     })

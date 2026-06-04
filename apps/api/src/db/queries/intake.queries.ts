@@ -78,12 +78,12 @@ export async function assignForm(db: DbClient, providerId: string, formId: strin
 
 export async function listAssignmentsByPatient(db: DbClient, patientId: string) {
   type Row = {
-    id: string; form_id: string; status: string; assigned_at: string;
+    id: string; form_id: string; patient_id: string; provider_id: string; status: string; assigned_at: string; completed_at: string | null;
     form_title: string; form_description: string | null; form_fields: unknown;
     provider_name: string;
   };
   const res = await db.execute<Row>(sql`
-    SELECT a.id, a.form_id, a.status, a.assigned_at::text,
+    SELECT a.id, a.form_id, a.patient_id, a.provider_id, a.status, a.assigned_at::text, a.completed_at::text,
            f.title AS form_title, f.description AS form_description, f.fields AS form_fields,
            COALESCE(p.first_name || ' ' || p.last_name, 'Provider') AS provider_name
     FROM intake_form_assignments a
@@ -98,11 +98,11 @@ export async function listAssignmentsByPatient(db: DbClient, patientId: string) 
 
 export async function listResponsesByForm(db: DbClient, providerId: string, formId: string) {
   type Row = {
-    id: string; patient_id: string; answers: unknown; submitted_at: string;
+    id: string; assignment_id: string; form_id: string; patient_id: string; answers: unknown; submitted_at: string;
     patient_name: string;
   };
   const res = await db.execute<Row>(sql`
-    SELECT r.id, r.patient_id, r.answers, r.submitted_at::text,
+    SELECT r.id, r.assignment_id, r.form_id, r.patient_id, r.answers, r.submitted_at::text,
            COALESCE(p.first_name || ' ' || p.last_name, 'Patient') AS patient_name
     FROM intake_responses r
     JOIN intake_form_assignments a ON a.id = r.assignment_id

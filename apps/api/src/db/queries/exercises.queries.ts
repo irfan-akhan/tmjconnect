@@ -12,7 +12,9 @@ export async function listActiveAssignments(db: DbClient, user: ScopedUser) {
   return db
     .select({
       assignment_id: exerciseAssignments.id,
+      patient_id: exerciseAssignments.patient_id,
       exercise_id: exercises.id,
+      exercise_provider_id: exercises.provider_id,
       title: exercises.title,
       description: exercises.description,
       duration_seconds: exercises.duration_seconds,
@@ -20,6 +22,8 @@ export async function listActiveAssignments(db: DbClient, user: ScopedUser) {
       instructions: exercises.instructions,
       video_url: exercises.video_url,
       thumbnail_url: exercises.thumbnail_url,
+      exercise_created_at: exercises.created_at,
+      exercise_updated_at: exercises.updated_at,
       frequency: exerciseAssignments.frequency,
       sets: exerciseAssignments.sets,
       status: exerciseAssignments.status,

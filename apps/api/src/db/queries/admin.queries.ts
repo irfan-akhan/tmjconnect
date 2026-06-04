@@ -134,6 +134,9 @@ export async function getUserDetail(db: DbClient, userId: string) {
       is_active: users.is_active,
       email_verified: users.email_verified,
       mfa_enabled: users.mfa_enabled,
+      fcm_token: users.fcm_token,
+      tos_accepted_at: users.tos_accepted_at,
+      tos_version: users.tos_version,
       created_at: users.created_at,
       updated_at: users.updated_at,
       deleted_at: users.deleted_at,
@@ -141,9 +144,11 @@ export async function getUserDetail(db: DbClient, userId: string) {
       last_name: profiles.last_name,
       date_of_birth: profiles.date_of_birth,
       gender: profiles.gender,
+      avatar_url: profiles.avatar_url,
       city: profiles.city,
       state: profiles.state,
       timezone: profiles.timezone,
+      profile_updated_at: profiles.updated_at,
     })
     .from(users)
     .leftJoin(profiles, eq(profiles.user_id, users.id))

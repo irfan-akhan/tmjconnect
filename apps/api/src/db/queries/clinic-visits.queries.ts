@@ -17,6 +17,7 @@ export type ClinicVisit = {
   visited_at: string;
   notes: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 /** Returns the patient's most recent clinic visit, or null if none exists. */
@@ -32,6 +33,7 @@ export async function getLastClinicVisitForPatient(
       visited_at: sql<string>`${clinicVisits.visited_at}::text`,
       notes: clinicVisits.notes,
       created_at: sql<string>`${clinicVisits.created_at}::text`,
+      updated_at: sql<string>`${clinicVisits.updated_at}::text`,
     })
     .from(clinicVisits)
     .where(eq(clinicVisits.patient_id, patientId))
@@ -59,6 +61,7 @@ export async function insertClinicVisit(
       visited_at: sql<string>`${clinicVisits.visited_at}::text`,
       notes: clinicVisits.notes,
       created_at: sql<string>`${clinicVisits.created_at}::text`,
+      updated_at: sql<string>`${clinicVisits.updated_at}::text`,
     });
   return row;
 }

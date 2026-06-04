@@ -83,6 +83,10 @@ export async function claimPendingOutboxRows(db: DbClient, limit: number) {
       payload: notificationOutbox.payload,
       attempts: notificationOutbox.attempts,
       max_attempts: notificationOutbox.max_attempts,
+      next_attempt_at: notificationOutbox.next_attempt_at,
+      sent_at: notificationOutbox.sent_at,
+      last_error: notificationOutbox.last_error,
+      created_at: notificationOutbox.created_at,
     })
     .from(notificationOutbox)
     .where(
