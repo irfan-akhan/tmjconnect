@@ -34,7 +34,7 @@ type SymptomLogData = {
 /**
  * upsertSymptomLog — Create a new log or update the existing log for the same day.
  *
- * "Same day" is evaluated in UTC (consistent with DB DATE() calls).
+ * "Same day" is evaluated in UTC (matches idx_sl_patient_day_unique).
  * Returns the resulting row and a `created` boolean.
  */
 export async function upsertSymptomLog(
@@ -50,7 +50,7 @@ export async function upsertSymptomLog(
       .from(symptomLogs)
       .where(
         scopeToUser(
-          sql`DATE(${symptomLogs.logged_at}) = DATE(${data.logged_at.toISOString()}::timestamptz)`,
+          sql`(${symptomLogs.logged_at} AT TIME ZONE 'UTC')::date = (${data.logged_at.toISOString()}::timestamptz AT TIME ZONE 'UTC')::date`,
           symptomLogs,
           user,
         ),
@@ -206,12 +206,10 @@ export async function updateSymptomLog(
 // ─── Calendar ─────────────────────────────────────────────────────────────────────
 
 /**
- * getSymptomCalendar — Aggregate symptom logs by UTC calendar day for a given month.
- * Returns { day: 'YYYY-MM-DD', avg_pain: number, count: number }[] sorted by day ASC.
+ * getSymptomCalendar — Returns full symptom log entries for a month.
  *
- * Uses raw SQL for the aggregate — the `patient_id = :userId` filter is inlined
- * here (equivalent to scopeToUser for role=patient). If this query ever needs
- * to serve providers/admins, convert to the Drizzle builder + scopeToUser.
+ * With idx_sl_patient_day_unique in place, each UTC day has at most one row per
+ * patient. We still include `day` in the payload so calendar UIs can index quickly.
  */
 export async function getSymptomCalendar(
   db: Db['db'],
@@ -219,26 +217,21 @@ export async function getSymptomCalendar(
   year: number,
   month: number,
 ) {
-  type CalendarRow = { day: string; avg_pain: string; count: string };
+  const rows = await db
+    .select()
+    .from(symptomLogs)
+    .where(
+      and(
+        eq(symptomLogs.patient_id, patientId),
+        sql`EXTRACT(YEAR FROM ${symptomLogs.logged_at}) = ${year}`,
+        sql`EXTRACT(MONTH FROM ${symptomLogs.logged_at}) = ${month}`,
+      ),
+    )
+    .orderBy(symptomLogs.logged_at);
 
-  const result = await db.execute<CalendarRow>(sql`
-    SELECT
-      DATE(logged_at)::text                            AS day,
-      ROUND(AVG(pain_level)::numeric, 1)::text         AS avg_pain,
-      COUNT(*)::text                                   AS count
-    FROM symptom_logs
-    WHERE
-      patient_id = ${patientId}
-      AND EXTRACT(YEAR  FROM logged_at) = ${year}
-      AND EXTRACT(MONTH FROM logged_at) = ${month}
-    GROUP BY DATE(logged_at)
-    ORDER BY day
-  `);
-
-  const rows: CalendarRow[] = Array.isArray(result) ? result : result.rows ?? [];
-  return rows.map((r) => ({
-    day: r.day,
-    avg_pain: parseFloat(r.avg_pain),
-    count: parseInt(r.count, 10),
+  return rows.map((row) => ({
+    ...row,
+    day: row.logged_at.toISOString().slice(0, 10),
+    count: 1,
   }));
 }
