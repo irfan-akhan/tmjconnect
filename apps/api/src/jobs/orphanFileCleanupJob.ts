@@ -14,7 +14,7 @@ import { ORPHAN_FILE_MIN_AGE_DAYS } from '../config/constants';
 
 type UrlRow = { url: string };
 
-const STORAGE_FOLDERS = ['videos', 'avatars', 'report-photos'] as const;
+const STORAGE_FOLDERS = ['videos', 'thumbnails', 'avatars', 'report-photos'] as const;
 
 export async function orphanFileCleanupJob(container: Container) {
   const { db, storage, logger } = container;

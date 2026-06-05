@@ -9,6 +9,16 @@ import type { Db } from '../../config/database';
 
 type DbClient = Db['db'];
 
+export type BroadcastRecipient = { id: string; email: string | null; email_verified: boolean | null };
+export type DueBroadcast = {
+  id: string;
+  audience: string;
+  type: 'announcement' | 'system';
+  title: string;
+  body: string;
+  channels: string[];
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // #5: Provider performance dashboard
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -635,21 +645,42 @@ export async function createBroadcast(
   return result;
 }
 
-export async function listBroadcastRecipientEmails(db: DbClient, audience: string): Promise<string[]> {
+export async function listBroadcastRecipients(db: DbClient, audience: string): Promise<BroadcastRecipient[]> {
   const audienceFilter = audience === 'all' ? sql`TRUE` :
     sql`role = ${audience === 'admins' ? 'admin' : audience === 'patients' ? 'patient' : 'provider'}`;
 
-  type Row = { email: string };
+  type Row = { id: string; email: string | null; email_verified: boolean | null };
   const result = await db.execute<Row>(sql`
-    SELECT email
+    SELECT id, email, email_verified
     FROM users
     WHERE is_active = true
       AND deleted_at IS NULL
-      AND email_verified = true
       AND ${audienceFilter}
   `);
   const rows: Row[] = Array.isArray(result) ? result : result.rows ?? [];
-  return rows.map((row) => row.email).filter(Boolean);
+  return rows;
+}
+
+export async function listDueBroadcasts(db: DbClient, limit = 25): Promise<DueBroadcast[]> {
+  const result = await db.execute<DueBroadcast>(sql`
+    SELECT id, audience, type, title, body, channels
+    FROM broadcasts
+    WHERE sent_at IS NULL
+      AND scheduled_at IS NOT NULL
+      AND scheduled_at <= NOW()
+    ORDER BY scheduled_at ASC, created_at ASC
+    LIMIT ${limit}
+  `);
+  const rows: DueBroadcast[] = Array.isArray(result) ? result : result.rows ?? [];
+  return rows;
+}
+
+export async function markBroadcastSent(db: DbClient, id: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE broadcasts
+    SET sent_at = NOW()
+    WHERE id = ${id}
+  `);
 }
 
 export async function listBroadcasts(db: DbClient, limit: number, offset: number) {

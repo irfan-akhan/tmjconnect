@@ -27,6 +27,7 @@ import * as ListAllReports from '../use-cases/admin/list-all-reports';
 import * as GetOutboxStats from '../use-cases/admin/get-outbox-stats';
 import * as ListOutboxDlq from '../use-cases/admin/list-outbox-dlq';
 import * as ListOutboxPending from '../use-cases/admin/list-outbox-pending';
+import * as ListOutboxRecent from '../use-cases/admin/list-outbox-recent';
 import * as ListActiveSessions from '../use-cases/admin/list-active-sessions';
 import * as GetJobSummaries from '../use-cases/admin/get-job-summaries';
 import * as ListJobHistory from '../use-cases/admin/list-job-history';
@@ -58,12 +59,12 @@ import {
   listAdminLinkingCodes,
   listAdminLinks,
   listBroadcasts,
-  listBroadcastRecipientEmails,
   listFeatureFlags,
   listScheduledReports,
   updateFeatureFlag,
   updateScheduledReport,
 } from '../db/queries/admin-p1p2.queries';
+import { dispatchBroadcast } from '../services/broadcastDispatch';
 
 const createBroadcastSchema = z.object({
   audience: z.enum(['all', 'patients', 'providers', 'admins']),
@@ -365,6 +366,15 @@ export function adminRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
+  router.get('/outbox/recent', validate(adminOutboxQuerySchema, 'query'), async (req, res, next) => {
+    try {
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const { channel } = req.query as unknown as Pick<ListOutboxRecent.Input, 'channel'>;
+      const result = await ListOutboxRecent.execute(container, { limit, offset, sortBy: sortBy as ListOutboxRecent.Input['sortBy'], sortOrder, channel });
+      res.json({ data: result.items, meta: result.meta });
+    } catch (err) { next(err); }
+  });
+
   router.post('/outbox/:id/retry', auditLog('admin_outbox_retried', 'notification_outbox'), async (req, res, next) => {
     try {
       const success = await retryOutboxEntry(container.db, req.params.id);
@@ -420,32 +430,22 @@ export function adminRouter(container: Container) {
         scheduled_at: req.body.scheduled_at ?? null,
       });
 
-      let emailSent = 0;
-      let emailFailed = 0;
-      const shouldSendEmailNow = req.body.channels.includes('email') && !req.body.scheduled_at;
-      if (shouldSendEmailNow) {
-        const recipientEmails = await listBroadcastRecipientEmails(container.db, req.body.audience);
-        const results = await Promise.allSettled(
-          recipientEmails.map((email) =>
-            container.email.sendBroadcast(email, req.body.title, req.body.body, req.body.type),
-          ),
-        );
-        emailSent = results.filter((result) => result.status === 'fulfilled').length;
-        emailFailed = results.length - emailSent;
-        if (emailFailed > 0) {
-          container.logger.warn(
-            { broadcastId: broadcast?.id, emailSent, emailFailed },
-            'Admin broadcast email delivery had failures',
-          );
-        }
-      }
+      const delivery = req.body.scheduled_at ? { emailSent: 0, emailFailed: 0, inAppSent: 0 } : await dispatchBroadcast(container, {
+        id: broadcast?.id ?? 'immediate',
+        audience: req.body.audience,
+        type: req.body.type,
+        title: req.body.title,
+        body: req.body.body,
+        channels: req.body.channels,
+      });
 
       res.status(201).json({
         data: {
           broadcast_id: broadcast?.id,
           recipient_count: broadcast?.recipient_count ?? 0,
-          email_sent: emailSent,
-          email_failed: emailFailed,
+          in_app_sent: delivery.inAppSent,
+          email_sent: delivery.emailSent,
+          email_failed: delivery.emailFailed,
         },
       });
     } catch (err) { next(err); }

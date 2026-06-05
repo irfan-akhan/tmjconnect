@@ -14,6 +14,7 @@ import { weeklyDigestJob } from './weeklyDigestJob';
 import { cleanupJob } from './cleanupJob';
 import { orphanFileCleanupJob } from './orphanFileCleanupJob';
 import { outboxJob } from './outboxJob';
+import { scheduledBroadcastJob } from './scheduledBroadcastJob';
 import { insertJobRun, completeJobRun } from '../db/queries/admin.queries';
 
 /**
@@ -85,6 +86,7 @@ const runnableJobs = {
   cleanupJob: { lockId: 4, run: cleanupJob },
   orphanFileCleanupJob: { lockId: 5, run: orphanFileCleanupJob },
   outboxJob: { lockId: 6, run: outboxJob },
+  scheduledBroadcastJob: { lockId: 7, run: scheduledBroadcastJob },
 } as const;
 
 export async function runJobNow(container: Container, jobName: string): Promise<boolean> {
@@ -133,5 +135,11 @@ export function registerJobs(container: Container) {
       .catch((err) => logger.error({ err }, 'outboxJob failed'));
   });
 
-  logger.info('Scheduled jobs registered (6 jobs)');
+  // Every minute — send due scheduled broadcasts.
+  cron.schedule('* * * * *', () => {
+    withAdvisoryLock(pool, 7, 'scheduledBroadcastJob', logger, db, () => scheduledBroadcastJob(container))
+      .catch((err) => logger.error({ err }, 'scheduledBroadcastJob failed'));
+  });
+
+  logger.info('Scheduled jobs registered (7 jobs)');
 }

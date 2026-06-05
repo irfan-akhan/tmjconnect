@@ -593,6 +593,42 @@ export async function countOutboxPending(db: DbClient, channel?: string) {
   return parseInt(rows[0]?.total ?? '0', 10);
 }
 
+export async function listOutboxRecent(
+  db: DbClient,
+  limit: number,
+  offset: number,
+  channel?: string,
+  sortBy: 'created_at' | 'next_attempt_at' | 'attempts' = 'created_at',
+  sortOrder: SortOrder = 'desc',
+) {
+  const orderBy = {
+    created_at: sql`created_at`,
+    next_attempt_at: sql`next_attempt_at`,
+    attempts: sql`attempts`,
+  }[sortBy] ?? sql`created_at`;
+  const orderDir = sortDirection(sortOrder);
+  return db.execute(sql`
+    SELECT id, user_id, channel::text, type, payload, attempts, max_attempts,
+           next_attempt_at::text, sent_at::text, last_error, created_at::text
+    FROM notification_outbox
+    WHERE TRUE
+    ${channel ? sql`AND channel = ${channel}` : sql``}
+    ORDER BY ${orderBy} ${orderDir}, created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
+}
+
+export async function countOutboxRecent(db: DbClient, channel?: string) {
+  type Row = { total: string };
+  const result = await db.execute<Row>(sql`
+    SELECT COUNT(*)::text AS total FROM notification_outbox
+    WHERE TRUE
+    ${channel ? sql`AND channel = ${channel}` : sql``}
+  `);
+  const rows: Row[] = Array.isArray(result) ? result : result.rows ?? [];
+  return parseInt(rows[0]?.total ?? '0', 10);
+}
+
 export async function retryOutboxEntry(db: DbClient, id: string) {
   return db.execute(sql`
     UPDATE notification_outbox
@@ -729,6 +765,7 @@ const JOB_SCHEDULES: Record<string, string> = {
   cleanupJob: '0 3 * * *',
   orphanFileCleanupJob: '0 4 * * *',
   outboxJob: '* * * * *',
+  scheduledBroadcastJob: '* * * * *',
 };
 
 export async function getJobSummaries(db: DbClient) {
@@ -777,22 +814,31 @@ export async function getJobSummaries(db: DbClient) {
     ORDER BY l.job_name
   `).then((r) => Array.isArray(r) ? r : r.rows ?? []);
 
-  return rows.map((r) => ({
-    job_name: r.job_name,
-    schedule: JOB_SCHEDULES[r.job_name] ?? 'unknown',
-    last_run: r.last_status
-      ? {
-          status: r.last_status,
-          started_at: r.last_started_at,
-          duration_ms: r.last_duration_ms ? parseInt(r.last_duration_ms, 10) : null,
-          rows_affected: r.last_rows_affected ? parseInt(r.last_rows_affected, 10) : null,
-          error_message: r.last_error_message,
-        }
-      : null,
-    last_success_at: r.last_success_at,
-    success_rate_24h: parseFloat(r.success_rate_24h),
-    avg_duration_ms_7d: parseInt(r.avg_duration_ms_7d, 10),
-  }));
+  const byJob = new Map(rows.map((r) => [r.job_name, r]));
+  const configuredJobNames = Object.keys(JOB_SCHEDULES);
+  const unknownJobNames = rows
+    .map((r) => r.job_name)
+    .filter((jobName) => !JOB_SCHEDULES[jobName]);
+
+  return [...configuredJobNames, ...unknownJobNames].map((jobName) => {
+    const r = byJob.get(jobName);
+    return {
+      job_name: jobName,
+      schedule: JOB_SCHEDULES[jobName] ?? 'unknown',
+      last_run: r?.last_status
+        ? {
+            status: r.last_status,
+            started_at: r.last_started_at,
+            duration_ms: r.last_duration_ms ? parseInt(r.last_duration_ms, 10) : null,
+            rows_affected: r.last_rows_affected ? parseInt(r.last_rows_affected, 10) : null,
+            error_message: r.last_error_message,
+          }
+        : null,
+      last_success_at: r?.last_success_at ?? null,
+      success_rate_24h: r ? parseFloat(r.success_rate_24h) : 0,
+      avg_duration_ms_7d: r ? parseInt(r.avg_duration_ms_7d, 10) : 0,
+    };
+  });
 }
 
 export async function listJobHistory(
