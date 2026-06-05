@@ -45,9 +45,14 @@ export const registerSchema = z.discriminatedUnion('role', [
 ]);
 
 // ─── Verify Email ────────────────────────────────────────────────────────────────
+const sixDigitCodeSchema = z
+  .string()
+  .transform((value) => value.replace(/\D/g, ''))
+  .pipe(z.string().length(6).regex(/^\d{6}$/, 'Code must be 6 digits'));
+
 export const verifyEmailSchema = z.object({
   email: z.string().email().toLowerCase(),
-  code: z.string().length(6).regex(/^\d{6}$/, 'Code must be 6 digits'),
+  code: sixDigitCodeSchema,
 });
 
 // ─── Login ────────────────────────────────────────────────────────────────────────
@@ -91,7 +96,7 @@ export const resetPasswordSchema = z.object({
 
 export const resetPasswordVerifySchema = z.object({
   email: z.string().email().toLowerCase(),
-  code: z.string().length(6).regex(/^\d{6}$/, 'Code must be 6 digits'),
+  code: sixDigitCodeSchema,
 });
 
 export const resetPasswordConfirmSchema = z.object({
@@ -124,7 +129,7 @@ export const requestEmailChangeSchema = z.object({
 });
 
 export const verifyEmailChangeSchema = z.object({
-  code: z.string().length(6).regex(/^\d{6}$/, 'Code must be 6 digits'),
+  code: sixDigitCodeSchema,
 });
 
 // ─── TOS acceptance ──────────────────────────────────────────────────────────────
