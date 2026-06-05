@@ -12,8 +12,10 @@ export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;          // 15 minutes
 export const REFRESH_TOKEN_TTL_DAYS = 7;                   // 7 days
 export const MFA_TOKEN_TTL_SECONDS = 5 * 60;               // 5 minutes
 export const MFA_SETUP_TOKEN_TTL_SECONDS = 10 * 60;        // 10 minutes
+export const VERIFICATION_CODE_TTL_SECONDS = 5 * 60;       // 5 minutes
+export const SMS_MFA_OTP_TTL_SECONDS = VERIFICATION_CODE_TTL_SECONDS;
 export const PASSWORD_RESET_TTL_SECONDS = 60 * 60;         // 1 hour (legacy deep-link reset)
-export const PASSWORD_RESET_OTP_TTL_SECONDS = 15 * 60;     // 15 minutes
+export const PASSWORD_RESET_OTP_TTL_SECONDS = VERIFICATION_CODE_TTL_SECONDS;
 export const PASSWORD_RESET_SESSION_TTL_SECONDS = 10 * 60; // 10 minutes
 
 // ─── Security ────────────────────────────────────────────────────────────────────
@@ -32,8 +34,7 @@ export const LINKING_CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 export const LOCKOUT_MAX_ATTEMPTS = 5;
 export const LOCKOUT_WINDOW_MINUTES = 30;
 
-// ─── Email verification ───────────────────────────────────────────────────────────
-export const EMAIL_VERIFY_TTL_HOURS = 24;
+// ─── Verification codes ─────────────────────────────────────────────────────────
 export const EMAIL_VERIFY_MAX_ATTEMPTS = 3;    // After 3 failures, code is invalidated
 export const RESEND_VERIFY_COOLDOWN_SECONDS = 120;  // 1 per 2 minutes per email
 export const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 3;

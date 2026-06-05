@@ -1691,7 +1691,7 @@ paths:
                 phone: { type: string, pattern: '^\+[1-9]\d{7,14}$', description: "E.164 format (e.g. +15551234567). Required for SMS MFA." }
                 timezone: { type: string }
       responses:
-        '201': { description: Account created. Check email for 6-digit verification code. }
+        '201': { description: Account created. Check email for a 6-digit verification code that expires after 5 minutes. }
         '409': { description: Email already registered. }
 
   /auth/patient/login:
@@ -1796,7 +1796,7 @@ paths:
                 clinic_name: { type: string }
                 credentials: { type: array, items: { type: string }, description: "Professional titles (e.g. ['DDS', 'CCMC'])" }
       responses:
-        '201': { description: Account created. Check email for 6-digit verification code. }
+        '201': { description: Account created. Check email for a 6-digit verification code that expires after 5 minutes. }
         '409': { description: Email already registered. }
 
   /auth/provider/login:
@@ -1883,7 +1883,7 @@ paths:
     post:
       tags: [Auth]
       summary: Verify MFA code to complete provider login
-      description: "Accepts TOTP code, SMS code, or one-time backup code."
+      description: "Accepts TOTP code, a 5-minute SMS OTP, or one-time backup code."
       requestBody:
         required: true
         content:
@@ -1893,7 +1893,7 @@ paths:
               required: [mfa_token, code]
               properties:
                 mfa_token: { type: string, description: "From /auth/provider/login response" }
-                code: { type: string, minLength: 6, maxLength: 10, description: "6-digit TOTP/SMS or 10-char backup code" }
+                code: { type: string, minLength: 6, maxLength: 10, description: "6-digit TOTP, 5-minute SMS OTP, or 10-char backup code" }
                 type: { type: string, enum: [totp, sms, backup], default: totp }
       responses:
         '200':
@@ -1907,6 +1907,7 @@ paths:
     post:
       tags: [Auth]
       summary: Request SMS fallback MFA code
+      description: Generates a random one-time SMS code that expires after 5 minutes. Requesting a new code replaces the previous SMS code.
       requestBody:
         required: true
         content:
@@ -1923,7 +1924,7 @@ paths:
   /auth/verify-email:
     post:
       tags: [Auth]
-      summary: Verify email with 6-digit code (both roles)
+      summary: Verify email with 5-minute 6-digit code (both roles)
       description: |
         Shared by both patient and provider registration flows.
         - Patient: returns access_token + refresh_token (logged in immediately).
@@ -1937,7 +1938,7 @@ paths:
               required: [email, code]
               properties:
                 email: { type: string, format: email }
-                code: { type: string, minLength: 6, maxLength: 6, description: "6-digit code from verification email" }
+                code: { type: string, minLength: 6, maxLength: 6, description: "5-minute 6-digit code from verification email" }
       responses:
         '200':
           description: Patient gets tokens; provider gets setup_token for MFA onboarding
@@ -1975,7 +1976,7 @@ paths:
   /auth/forgot-password:
     post:
       tags: [Auth]
-      summary: Request password reset code (OTP)
+      summary: Request 5-minute password reset code (OTP)
       requestBody:
         required: true
         content:
@@ -1986,12 +1987,12 @@ paths:
               properties:
                 email: { type: string, format: email }
       responses:
-        '200': { description: Always 200 (never reveals if email exists). Sends a 6-digit OTP if account exists. }
+        '200': { description: Always 200 (never reveals if email exists). Sends a 5-minute 6-digit OTP if account exists. }
 
   /auth/reset-password/verify:
     post:
       tags: [Auth]
-      summary: Verify password reset OTP and receive short-lived reset token
+      summary: Verify 5-minute password reset OTP and receive short-lived reset token
       requestBody:
         required: true
         content:
@@ -2001,7 +2002,7 @@ paths:
               required: [email, code]
               properties:
                 email: { type: string, format: email }
-                code: { type: string, pattern: "^\\d{6}$" }
+                code: { type: string, pattern: "^\\d{6}$", description: "5-minute 6-digit password reset OTP" }
       responses:
         '200':
           description: OTP accepted
@@ -2055,7 +2056,7 @@ paths:
   /auth/resend-verify-email:
     post:
       tags: [Auth]
-      summary: Resend email verification code (rate limited)
+      summary: Resend 5-minute email verification code (rate limited)
       requestBody:
         required: true
         content:
@@ -4089,7 +4090,7 @@ paths:
       summary: Request to change the account email address
       description: |
         Step 1 of the two-step email change flow. Verifies the current password,
-        then emails a 6-digit verification code to the proposed new address.
+        then emails a 5-minute 6-digit verification code to the proposed new address.
         Email is only updated after /auth/change-email/verify is called with
         that code.
       security: [{ bearerAuth: [] }]
@@ -4105,7 +4106,7 @@ paths:
                 current_password: { type: string }
       responses:
         '200':
-          description: Verification code emailed to new address
+          description: Five-minute verification code emailed to new address
           content:
             application/json:
               schema:
@@ -4853,6 +4854,31 @@ paths:
                     items: { $ref: '#/components/schemas/OutboxItem' }
                   meta: { $ref: '#/components/schemas/ListMeta' }
 
+  /admin/outbox/recent:
+    get:
+      tags: [Admin]
+      summary: Recent notification outbox activity
+      description: Offset-paginated outbox feed across sent, pending, and dead-letter items with channel filtering and sorting.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/sortOrderParam'
+        - { name: sortBy, in: query, description: Field to sort outbox items by., schema: { type: string, enum: [created_at, next_attempt_at, attempts], default: created_at }, example: created_at }
+        - { name: channel, in: query, schema: { type: string, enum: [email, sms, push] } }
+      responses:
+        '200':
+          description: Recent outbox items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OutboxItem' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+
   /admin/outbox/pending:
     get:
       tags: [Admin]
@@ -5003,7 +5029,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [reminderJob, codeExpiryJob, weeklyDigestJob, cleanupJob, orphanFileCleanupJob, outboxJob]
+            enum: [reminderJob, codeExpiryJob, weeklyDigestJob, cleanupJob, orphanFileCleanupJob, outboxJob, scheduledBroadcastJob]
       responses:
         '202':
           description: Enqueued
@@ -5278,6 +5304,7 @@ paths:
                     properties:
                       broadcast_id: { type: string, format: uuid }
                       recipient_count: { type: integer }
+                      in_app_sent: { type: integer, description: Number of in-app notification rows created immediately. Zero when in-app is not selected or the broadcast is scheduled. }
                       email_sent: { type: integer, description: Number of immediate email deliveries accepted by the email provider. Zero when email is not selected or the broadcast is scheduled. }
                       email_failed: { type: integer, description: Number of immediate email deliveries that failed. Zero when email is not selected or the broadcast is scheduled. }
     get:

@@ -1,9 +1,9 @@
 import type { Container } from '../../config/container';
 import { AppError } from '../../middleware/errorHandler';
-import { findUserForSms } from '../../db/queries/auth.queries';
+import { findUserForSms, setSmsMfaCode } from '../../db/queries/auth.queries';
 import { verifyPurposeToken } from '../../utils/jwt';
-import { decryptMfaSecret } from '../../utils/hash';
-import * as OTPAuth from 'otpauth';
+import { generateVerifyCode, hashToken } from '../../utils/hash';
+import { SMS_MFA_OTP_TTL_SECONDS } from '../../config/constants';
 
 type Deps = Pick<Container, 'db' | 'sms' | 'logger'>;
 
@@ -20,14 +20,10 @@ export async function execute(deps: Deps, input: SendSmsMfaInput): Promise<void>
   if (!user.phone) throw new AppError(400, 'NO_PHONE', 'No phone number on file for SMS MFA.');
   if (!user.mfa_secret) throw new AppError(400, 'MFA_NOT_SETUP', 'MFA not configured.');
 
-  const secret = decryptMfaSecret(user.mfa_secret);
-  const totp = new OTPAuth.TOTP({
-    secret: OTPAuth.Secret.fromBase32(secret),
-    digits: 6,
-    period: 30,
-    algorithm: 'SHA1',
-  });
+  const code = generateVerifyCode();
+  const expiresAt = new Date(Date.now() + SMS_MFA_OTP_TTL_SECONDS * 1000);
+  await setSmsMfaCode(db, user.id, hashToken(code), expiresAt);
 
-  sms.sendMfaCode(user.phone, totp.generate())
+  sms.sendMfaCode(user.phone, code)
     .catch((err) => logger.error({ err }, 'Failed to send SMS MFA code'));
 }

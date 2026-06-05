@@ -103,7 +103,7 @@ function templates(appUrl: string) {
         <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:${BRAND_NAVY};text-align:center;padding:16px;background:#f5f5f5;border-radius:4px;margin:16px 0;">
           ${code}
         </div>
-        <p style="color:#888;font-size:13px;">This code expires in 24 hours. If you did not create a TMJConnect account, you can safely ignore this email.</p>
+        <p style="color:#888;font-size:13px;">This code expires in 5 minutes. If you did not create a TMJConnect account, you can safely ignore this email.</p>
       `),
     }),
 
@@ -115,7 +115,7 @@ function templates(appUrl: string) {
         <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:${BRAND_NAVY};text-align:center;padding:16px;background:#f5f5f5;border-radius:4px;margin:16px 0;">
           ${code}
         </div>
-        <p style="color:#888;font-size:13px;">This code expires in 1 hour. If you didn't request an email change, you can safely ignore this — your current email stays active.</p>
+        <p style="color:#888;font-size:13px;">This code expires in 5 minutes. If you didn't request an email change, you can safely ignore this — your current email stays active.</p>
       `),
     }),
 
@@ -149,7 +149,7 @@ function templates(appUrl: string) {
         <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:${BRAND_NAVY};text-align:center;padding:16px;background:#f5f5f5;border-radius:4px;margin:16px 0;">
           ${code}
         </div>
-        <p style="color:#888;font-size:13px;">This code expires in 15 minutes. If you did not request a password reset, you can safely ignore this email.</p>
+        <p style="color:#888;font-size:13px;">This code expires in 5 minutes. If you did not request a password reset, you can safely ignore this email.</p>
       `),
     }),
 

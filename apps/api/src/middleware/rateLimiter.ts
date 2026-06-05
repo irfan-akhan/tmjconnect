@@ -16,7 +16,7 @@ import {
   LOCKOUT_WINDOW_MINUTES,
   EMAIL_VERIFY_MAX_ATTEMPTS,
   PASSWORD_RESET_OTP_MAX_ATTEMPTS,
-  EMAIL_VERIFY_TTL_HOURS,
+  VERIFICATION_CODE_TTL_SECONDS,
 } from '../config/constants';
 
 // ─── Shared options ───────────────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ export function createAuthLimiters(pool: Pool) {
     tableName: 'rl_ev_code',
     keyPrefix: 'ev_code',
     points: EMAIL_VERIFY_MAX_ATTEMPTS,
-    duration: EMAIL_VERIFY_TTL_HOURS * 60 * 60,
+    duration: VERIFICATION_CODE_TTL_SECONDS,
     blockDuration: 0,
   });
 
@@ -195,7 +195,7 @@ export function createAuthLimiters(pool: Pool) {
     tableName: 'rl_reset_code',
     keyPrefix: 'reset_code',
     points: PASSWORD_RESET_OTP_MAX_ATTEMPTS,
-    duration: 15 * 60,
+    duration: VERIFICATION_CODE_TTL_SECONDS,
     blockDuration: 0,
   });
 

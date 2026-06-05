@@ -4,10 +4,11 @@ import {
   findUserForMfaVerify,
   findUnusedBackupCodes,
   markBackupCodeUsed,
+  clearSmsMfaCode,
   insertLoginEvent,
 } from '../../db/queries/auth.queries';
 import { verifyPurposeToken } from '../../utils/jwt';
-import { decryptMfaSecret, compareBackupCode } from '../../utils/hash';
+import { decryptMfaSecret, compareBackupCode, hashToken } from '../../utils/hash';
 import { issueTokens, checkNewDevice } from './helpers';
 import * as OTPAuth from 'otpauth';
 
@@ -34,7 +35,7 @@ export async function execute(deps: Deps, input: VerifyMfaInput): Promise<Verify
 
   let verified = false;
 
-  if (input.type === 'totp' || input.type === 'sms') {
+  if (input.type === 'totp') {
     if (!user.mfa_secret) throw new AppError(400, 'MFA_NOT_SETUP', 'MFA not configured.');
     const secret = decryptMfaSecret(user.mfa_secret);
     const totp = new OTPAuth.TOTP({
@@ -44,6 +45,12 @@ export async function execute(deps: Deps, input: VerifyMfaInput): Promise<Verify
       algorithm: 'SHA1',
     });
     verified = totp.validate({ token: input.code, window: 1 }) !== null;
+  } else if (input.type === 'sms') {
+    if (!user.sms_mfa_code_hash || !user.sms_mfa_expires_at || new Date() > user.sms_mfa_expires_at) {
+      await clearSmsMfaCode(db, userId).catch(() => {});
+      throw new AppError(401, 'INVALID_CODE', 'Invalid or expired MFA code.');
+    }
+    verified = hashToken(input.code) === user.sms_mfa_code_hash;
   } else if (input.type === 'backup') {
     const codes = await findUnusedBackupCodes(db, userId);
     for (const c of codes) {
@@ -56,6 +63,10 @@ export async function execute(deps: Deps, input: VerifyMfaInput): Promise<Verify
   }
 
   if (!verified) throw new AppError(401, 'INVALID_CODE', 'Invalid MFA code.');
+
+  if (input.type === 'sms') {
+    await clearSmsMfaCode(db, userId);
+  }
 
   const tokens = await issueTokens(db, user, input.deviceInfo, input.ip);
   await insertLoginEvent(db, {

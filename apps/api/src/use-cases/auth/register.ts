@@ -2,7 +2,7 @@ import type { Container } from '../../config/container';
 import { AppError } from '../../middleware/errorHandler';
 import { findUserByEmail, createUserTransaction } from '../../db/queries/auth.queries';
 import { hashPassword, generateVerifyCode, encryptVerifyCode } from '../../utils/hash';
-import { EMAIL_VERIFY_TTL_HOURS } from '../../config/constants';
+import { VERIFICATION_CODE_TTL_SECONDS } from '../../config/constants';
 
 type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
 
@@ -34,7 +34,7 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
 
   const password_hash = await hashPassword(input.password);
   const email_verify_code = generateVerifyCode();
-  const email_verify_expires = new Date(Date.now() + EMAIL_VERIFY_TTL_HOURS * 60 * 60 * 1000);
+  const email_verify_expires = new Date(Date.now() + VERIFICATION_CODE_TTL_SECONDS * 1000);
 
   await createUserTransaction(db, {
     email: input.email.toLowerCase(),

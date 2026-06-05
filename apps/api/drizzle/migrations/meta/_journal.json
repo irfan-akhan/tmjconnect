@@ -99,6 +99,13 @@
       "when": 1744329613000,
       "tag": "0014_symptom_daily_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1744329614000,
+      "tag": "0015_sms_mfa_otp",
+      "breakpoints": true
     }
   ]
 }

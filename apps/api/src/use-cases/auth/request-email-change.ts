@@ -21,7 +21,8 @@ import {
   findUserPasswordHash,
 } from '../../db/queries/auth.queries';
 import { AppError } from '../../middleware/errorHandler';
-import { comparePassword, encryptVerifyCode } from '../../utils/hash';
+import { comparePassword, encryptVerifyCode, generateVerifyCode } from '../../utils/hash';
+import { VERIFICATION_CODE_TTL_SECONDS } from '../../config/constants';
 
 type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
 
@@ -31,11 +32,7 @@ export type RequestEmailChangeInput = {
   newEmail: string;
 };
 
-const EXPIRY_MS = 60 * 60 * 1000; // 1 hour
-
-function sixDigitCode(): string {
-  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
-}
+const EXPIRY_MS = VERIFICATION_CODE_TTL_SECONDS * 1000;
 
 export async function execute(deps: Deps, input: RequestEmailChangeInput) {
   const { db, email, logger } = deps;
@@ -76,7 +73,7 @@ export async function execute(deps: Deps, input: RequestEmailChangeInput) {
     );
   }
 
-  const code = sixDigitCode();
+  const code = generateVerifyCode();
   const encryptedCode = encryptVerifyCode(code);
   const expiresAt = new Date(Date.now() + EXPIRY_MS);
 

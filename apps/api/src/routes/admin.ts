@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import os from 'node:os';
 import type { Container } from '../config/container';
 import { authenticate, authorize, checkSessionTimeout } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -454,16 +455,26 @@ export function adminRouter(container: Container) {
   // ─── System metrics ─────────────────────────────────────────────────────────
   router.get('/system/metrics', async (_req, res, next) => {
     try {
+      const memory = process.memoryUsage();
+      const toMb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10;
       res.json({
         data: {
-          uptime_seconds: Math.round(process.uptime()),
-          memory: process.memoryUsage(),
-          node_version: process.version,
-          env: container.env.NODE_ENV,
-          db_pool: {
-            total: container.pool.totalCount,
-            idle: container.pool.idleCount,
-            waiting: container.pool.waitingCount,
+          api: {
+            uptime_seconds: Math.round(process.uptime()),
+            memory: {
+              rss_mb: toMb(memory.rss),
+              heap_used_mb: toMb(memory.heapUsed),
+              heap_total_mb: toMb(memory.heapTotal),
+            },
+            cpu_load_1m: os.loadavg()[0] ?? 0,
+            pid: process.pid,
+            node_version: process.version,
+            env: container.env.NODE_ENV,
+          },
+          db: {
+            pool_total: container.pool.totalCount,
+            pool_idle: container.pool.idleCount,
+            pool_waiting: container.pool.waitingCount,
           },
         },
       });

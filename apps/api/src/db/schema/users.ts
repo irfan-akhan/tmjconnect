@@ -33,6 +33,9 @@ export const users = pgTable('users', {
   pending_email_expires: timestamp('pending_email_expires', { withTimezone: true }),
   // TOTP secret encrypted at rest with AES-256-GCM using MFA_ENCRYPTION_KEY.
   mfa_secret: text('mfa_secret'),
+  // SMS MFA fallback code. SHA-256 hash only; plaintext is sent once via SMS.
+  sms_mfa_code_hash: varchar('sms_mfa_code_hash', { length: 64 }),
+  sms_mfa_expires_at: timestamp('sms_mfa_expires_at', { withTimezone: true }),
   mfa_enabled: boolean('mfa_enabled').notNull().default(false),
   is_active: boolean('is_active').notNull().default(true),
   fcm_token: text('fcm_token'),

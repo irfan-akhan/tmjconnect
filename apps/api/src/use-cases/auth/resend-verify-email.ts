@@ -1,7 +1,7 @@
 import type { Container } from '../../config/container';
 import { findUnverifiedUserForResend, updateVerifyCode } from '../../db/queries/auth.queries';
 import { generateVerifyCode, encryptVerifyCode } from '../../utils/hash';
-import { EMAIL_VERIFY_TTL_HOURS, RESEND_VERIFY_COOLDOWN_SECONDS } from '../../config/constants';
+import { RESEND_VERIFY_COOLDOWN_SECONDS, VERIFICATION_CODE_TTL_SECONDS } from '../../config/constants';
 
 type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
 
@@ -18,7 +18,7 @@ export async function execute(deps: Deps, input: ResendVerifyEmailInput): Promis
   if (user.updated_at && user.updated_at > cooldownAgo) return; // still within cooldown
 
   const newCode = generateVerifyCode();
-  const newExpires = new Date(Date.now() + EMAIL_VERIFY_TTL_HOURS * 60 * 60 * 1000);
+  const newExpires = new Date(Date.now() + VERIFICATION_CODE_TTL_SECONDS * 1000);
   await updateVerifyCode(db, user.id, encryptVerifyCode(newCode), newExpires);
 
   email.sendVerifyEmail(user.email, newCode)

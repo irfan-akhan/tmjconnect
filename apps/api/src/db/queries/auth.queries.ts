@@ -69,7 +69,14 @@ export async function findUserPasswordHash(db: DbClient, id: string) {
 
 export async function findUserForMfaVerify(db: DbClient, id: string) {
   const [row] = await db
-    .select({ id: users.id, email: users.email, role: users.role, mfa_secret: users.mfa_secret })
+    .select({
+      id: users.id,
+      email: users.email,
+      role: users.role,
+      mfa_secret: users.mfa_secret,
+      sms_mfa_code_hash: users.sms_mfa_code_hash,
+      sms_mfa_expires_at: users.sms_mfa_expires_at,
+    })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);
@@ -92,6 +99,20 @@ export async function findUserForSms(db: DbClient, id: string) {
     .where(eq(users.id, id))
     .limit(1);
   return row ?? null;
+}
+
+export async function setSmsMfaCode(db: DbClient, userId: string, codeHash: string, expiresAt: Date) {
+  await db
+    .update(users)
+    .set({ sms_mfa_code_hash: codeHash, sms_mfa_expires_at: expiresAt, updated_at: sql`NOW()` })
+    .where(eq(users.id, userId));
+}
+
+export async function clearSmsMfaCode(db: DbClient, userId: string) {
+  await db
+    .update(users)
+    .set({ sms_mfa_code_hash: null, sms_mfa_expires_at: null, updated_at: sql`NOW()` })
+    .where(eq(users.id, userId));
 }
 
 export async function findUserByEmailActive(db: DbClient, email: string) {
