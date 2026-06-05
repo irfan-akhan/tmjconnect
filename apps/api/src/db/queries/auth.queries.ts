@@ -136,6 +136,21 @@ export async function getProfileFirstName(db: DbClient, userId: string) {
   return row?.first_name ?? null;
 }
 
+export async function getUserEmailProfile(db: DbClient, userId: string) {
+  const [row] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      first_name: profiles.first_name,
+      last_name: profiles.last_name,
+    })
+    .from(users)
+    .leftJoin(profiles, eq(profiles.user_id, users.id))
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
+}
+
 // ─── Registration ──────────────────────────────────────────────────────────────
 
 export type RegisterData = {

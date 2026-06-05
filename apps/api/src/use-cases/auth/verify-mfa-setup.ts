@@ -1,13 +1,14 @@
 import type { Container } from '../../config/container';
 import { AppError } from '../../middleware/errorHandler';
 import { findUserForMfaSetup, enableMfaTransaction, findUserCoreById } from '../../db/queries/auth.queries';
+import { getProfileFirstName } from '../../db/queries/auth.queries';
 import { verifyPurposeToken } from '../../utils/jwt';
 import { decryptMfaSecret, generateBackupCodes, hashBackupCode } from '../../utils/hash';
 import { BACKUP_CODE_COUNT } from '../../config/constants';
 import { issueTokens } from './helpers';
 import * as OTPAuth from 'otpauth';
 
-type Deps = Pick<Container, 'db'>;
+type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
 
 export type VerifyMfaSetupInput = { setupToken: string; code: string };
 
@@ -48,6 +49,9 @@ export async function execute(deps: Deps, input: VerifyMfaSetupInput): Promise<V
   if (!fullUser) throw new AppError(500, 'INTERNAL', 'User not found after MFA setup.');
 
   const tokens = await issueTokens(db, fullUser, 'mfa-setup', null);
+  const firstName = await getProfileFirstName(db, userId).catch(() => null);
+  deps.email.sendMfaEnabled(fullUser.email, firstName ?? '')
+    .catch((err) => deps.logger.warn({ err, userId }, 'MFA enabled email failed'));
 
   return {
     backup_codes: plainCodes,

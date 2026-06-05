@@ -16,7 +16,7 @@ import {
   reportRequests,
 } from '../../db/schema';
 
-type Deps = Pick<Container, 'db'>;
+type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
 
 export type ExportDataInput = { patientId: string };
 
@@ -119,6 +119,9 @@ export async function execute(deps: Deps, input: ExportDataInput) {
     .from(reportRequests)
     .where(eq(reportRequests.patient_id, input.patientId))
     .orderBy(desc(reportRequests.created_at));
+
+  deps.email.sendDataExported(account.email, profile?.first_name ?? '')
+    .catch((err) => deps.logger.warn({ err, patientId: input.patientId }, 'Data export email failed'));
 
   return {
     meta: {

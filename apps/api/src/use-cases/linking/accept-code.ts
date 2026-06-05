@@ -36,7 +36,7 @@ export async function execute(deps: Deps, input: AcceptCodeInput) {
     type: 'link_accepted',
     title: 'Patient connected',
     body: `${patientName ?? 'A patient'} has accepted your invitation.`,
-    data: { patientId: input.patientId, providerName: providerName ?? '', patientName: patientName ?? '' },
+    data: { patientId: input.patientId, providerName: providerName ?? '', patientName: patientName ?? '', recipientRole: 'provider' },
   }).catch((err) => logger.warn({ err }, 'Link acceptance notification (provider) failed'));
 
   notify.notify({
@@ -44,7 +44,7 @@ export async function execute(deps: Deps, input: AcceptCodeInput) {
     type: 'link_accepted',
     title: 'Connected to provider',
     body: `You are now connected to ${providerName ?? 'your provider'}.`,
-    data: { providerId: codeRow.provider_id, providerName: providerName ?? '', patientName: patientName ?? '' },
+    data: { providerId: codeRow.provider_id, providerName: providerName ?? '', patientName: patientName ?? '', recipientRole: 'patient' },
   }).catch((err) => logger.warn({ err }, 'Link acceptance notification (patient) failed'));
 
   return link;

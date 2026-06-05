@@ -48,24 +48,30 @@ export function createPushService(env: Env, logger: Logger): PushService {
 
   return {
     async sendPush(fcmToken, title, body, data) {
+      if (fcmToken.startsWith('ExponentPushToken[') || fcmToken.startsWith('ExpoPushToken[')) {
+        throw new Error('Push token is an Expo push token; Firebase Admin requires a native FCM registration token.');
+      }
+
       if (!firebaseMessaging) {
         if (isProduction) throw new Error('Push service not configured: Firebase credentials missing.');
         logger.debug({ fcmToken, title }, '[PushService stub] Push would be sent');
         return;
       }
 
-      await breaker.execute(async () => {
-        await firebaseMessaging!.send({
-          token: fcmToken,
-          notification: { title, body },
-          data: data ?? {},
-          apns: { payload: { aps: { sound: 'default' } } },
-          android: { notification: { sound: 'default' } },
+      try {
+        await breaker.execute(async () => {
+          await firebaseMessaging!.send({
+            token: fcmToken,
+            notification: { title, body },
+            data: data ?? {},
+            apns: { payload: { aps: { sound: 'default' } } },
+            android: { notification: { sound: 'default' } },
+          });
         });
-      }).catch((err) => {
-        // Push failures are non-critical — log but don't throw.
+      } catch (err) {
         logger.warn({ err, fcmToken }, '[PushService] FCM send failed');
-      });
+        throw err;
+      }
     },
   };
 }

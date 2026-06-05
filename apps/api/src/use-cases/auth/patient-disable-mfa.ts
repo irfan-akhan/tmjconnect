@@ -9,8 +9,9 @@ import { findUserPasswordHash } from '../../db/queries/auth.queries';
 import { comparePassword } from '../../utils/hash';
 import { eq } from 'drizzle-orm';
 import { users, mfaBackupCodes } from '../../db/schema';
+import { getUserEmailProfile } from '../../db/queries/auth.queries';
 
-type Deps = Pick<Container, 'db'>;
+type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
 
 export type PatientDisableMfaInput = { userId: string; password: string };
 
@@ -32,4 +33,9 @@ export async function execute(deps: Deps, input: PatientDisableMfaInput) {
       .delete(mfaBackupCodes)
       .where(eq(mfaBackupCodes.user_id, input.userId));
   });
+  const contact = await getUserEmailProfile(db, input.userId).catch(() => null);
+  if (contact?.email) {
+    deps.email.sendMfaDisabled(contact.email, contact.first_name ?? '')
+      .catch((err) => deps.logger.warn({ err, userId: input.userId }, 'MFA disabled email failed'));
+  }
 }

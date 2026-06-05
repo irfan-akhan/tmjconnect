@@ -141,6 +141,29 @@ export async function disconnectLink(
   return !!row;
 }
 
+export async function getLinkParticipants(db: DbClient, linkId: string) {
+  const [row] = await db
+    .select({
+      link_id: patientProviderLinks.id,
+      patient_id: patientProviderLinks.patient_id,
+      provider_id: patientProviderLinks.provider_id,
+      patient_email: sql<string>`patient_user.email`,
+      provider_email: sql<string>`provider_user.email`,
+      patient_first_name: sql<string | null>`patient_profile.first_name`,
+      patient_last_name: sql<string | null>`patient_profile.last_name`,
+      provider_first_name: sql<string | null>`provider_profile.first_name`,
+      provider_last_name: sql<string | null>`provider_profile.last_name`,
+    })
+    .from(patientProviderLinks)
+    .innerJoin(sql`users patient_user`, sql`patient_user.id = ${patientProviderLinks.patient_id}`)
+    .innerJoin(sql`users provider_user`, sql`provider_user.id = ${patientProviderLinks.provider_id}`)
+    .leftJoin(sql`profiles patient_profile`, sql`patient_profile.user_id = ${patientProviderLinks.patient_id}`)
+    .leftJoin(sql`profiles provider_profile`, sql`provider_profile.user_id = ${patientProviderLinks.provider_id}`)
+    .where(and(eq(patientProviderLinks.id, linkId), isNull(patientProviderLinks.unlinked_at)))
+    .limit(1);
+  return row ?? null;
+}
+
 // ─── Link listing ────────────────────────────────────────────────────────────────
 
 export async function listUserLinks(

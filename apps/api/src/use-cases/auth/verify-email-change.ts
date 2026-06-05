@@ -18,9 +18,9 @@ import type { Container } from '../../config/container';
 import { users } from '../../db/schema';
 import { AppError } from '../../middleware/errorHandler';
 import { decryptVerifyCode } from '../../utils/hash';
-import { findUserByEmail } from '../../db/queries/auth.queries';
+import { findUserByEmail, getProfileFirstName } from '../../db/queries/auth.queries';
 
-type Deps = Pick<Container, 'db'>;
+type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
 
 export type VerifyEmailChangeInput = {
   userId: string;
@@ -32,6 +32,7 @@ export async function execute(deps: Deps, input: VerifyEmailChangeInput) {
 
   const [row] = await db
     .select({
+      email: users.email,
       pending_email: users.pending_email,
       pending_email_code: users.pending_email_code,
       pending_email_expires: users.pending_email_expires,
@@ -84,6 +85,13 @@ export async function execute(deps: Deps, input: VerifyEmailChangeInput) {
       updated_at: sql`NOW()`,
     })
     .where(eq(users.id, input.userId));
+
+  const firstName = await getProfileFirstName(db, input.userId).catch(() => null);
+
+  deps.email.sendEmailChanged(row.email, firstName ?? '', row.pending_email)
+    .catch((err) => deps.logger.warn({ err, userId: input.userId }, 'Email change notice to previous email failed'));
+  deps.email.sendEmailChanged(row.pending_email, firstName ?? '', row.pending_email)
+    .catch((err) => deps.logger.warn({ err, userId: input.userId }, 'Email change notice to new email failed'));
 
   return { ok: true as const, new_email: row.pending_email };
 }
