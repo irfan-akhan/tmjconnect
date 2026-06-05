@@ -6,6 +6,7 @@ import { auditLog } from '../middleware/audit';
 import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import {
   updateProviderProfileSchema,
+  deleteAccountSchema,
   patientListQuerySchema,
   createExerciseSchema,
   updateExerciseSchema,
@@ -25,6 +26,7 @@ import {
 import { parseCursorPagination, buildCursorMeta } from '../utils/pagination';
 import * as GetProfile from '../use-cases/providers/get-profile';
 import * as UpdateProfile from '../use-cases/providers/update-profile';
+import * as DeleteAccount from '../use-cases/patients/delete-account';
 import * as ListPatients from '../use-cases/providers/list-patients';
 import * as GetPatientDetail from '../use-cases/providers/get-patient-detail';
 import * as ListPatientSymptoms from '../use-cases/providers/list-patient-symptoms';
@@ -89,6 +91,13 @@ export function providersRouter(container: Container) {
   router.patch('/me', validate(updateProviderProfileSchema), auditLog('provider_profile_updated', 'user'), async (req, res, next) => {
     try {
       res.json({ data: await UpdateProfile.execute(container, { userId: req.user!.id, fields: req.body }) });
+    } catch (err) { next(err); }
+  });
+
+  router.delete('/me', validate(deleteAccountSchema), auditLog('account_deletion_requested', 'user'), async (req, res, next) => {
+    try {
+      await DeleteAccount.execute(container, { userId: req.user!.id, password: req.body.password });
+      res.status(204).send();
     } catch (err) { next(err); }
   });
 

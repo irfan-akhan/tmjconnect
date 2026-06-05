@@ -3,7 +3,7 @@
  */
 import { eq, and, sql, isNull, asc, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
-import { linkingCodes, patientProviderLinks, profiles, users } from '../schema';
+import { linkingCodes, patientProviderLinks, profiles, providerDetails, users } from '../schema';
 
 type DbClient = Db['db'];
 type SortOrder = 'asc' | 'desc';
@@ -221,12 +221,17 @@ export async function listUserLinks(
       last_name: profiles.last_name,
       avatar_url: profiles.avatar_url,
       email: users.email,
+      license_type: providerDetails.license_type,
+      specialty: providerDetails.specialty,
+      clinic_name: providerDetails.clinic_name,
+      credentials: providerDetails.credentials,
       linked_at: patientProviderLinks.linked_at,
       consent_scope: patientProviderLinks.consent_scope,
     })
     .from(patientProviderLinks)
     .innerJoin(profiles, eq(profiles.user_id, patientProviderLinks.provider_id))
     .innerJoin(users, eq(users.id, patientProviderLinks.provider_id))
+    .innerJoin(providerDetails, eq(providerDetails.user_id, patientProviderLinks.provider_id))
     .where(and(
       eq(patientProviderLinks.patient_id, userId),
       isNull(patientProviderLinks.unlinked_at),

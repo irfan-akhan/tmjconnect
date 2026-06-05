@@ -3,7 +3,7 @@ import type { Container } from '../config/container';
 import { authenticate, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
-import { updatePatientProfileSchema, updateNotificationPrefsSchema, sessionListQuerySchema, activityListQuerySchema } from '@tmjconnect/shared';
+import { deleteAccountSchema, updatePatientProfileSchema, updateNotificationPrefsSchema, sessionListQuerySchema, activityListQuerySchema } from '@tmjconnect/shared';
 import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import * as GetProfile from '../use-cases/patients/get-profile';
 import * as UpdateProfile from '../use-cases/patients/update-profile';
@@ -38,9 +38,9 @@ export function patientsRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.delete('/me', auditLog('account_deletion_requested', 'user'), async (req, res, next) => {
+  router.delete('/me', validate(deleteAccountSchema), auditLog('account_deletion_requested', 'user'), async (req, res, next) => {
     try {
-      await DeleteAccount.execute(container, { userId: req.user!.id });
+      await DeleteAccount.execute(container, { userId: req.user!.id, password: req.body.password });
       res.status(204).send();
     } catch (err) { next(err); }
   });

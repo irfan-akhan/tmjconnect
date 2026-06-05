@@ -120,6 +120,10 @@ export const changePasswordSchema = z.object({
   new_password: passwordSchema,
 });
 
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, 'Password is required'),
+});
+
 // ─── Change Email ─────────────────────────────────────────────────────────────────
 // Two-step flow: request emits a verification code to the NEW address; verify
 // confirms the user controls it before we actually rotate the column.
