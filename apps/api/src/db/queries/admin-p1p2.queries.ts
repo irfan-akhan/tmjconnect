@@ -635,6 +635,23 @@ export async function createBroadcast(
   return result;
 }
 
+export async function listBroadcastRecipientEmails(db: DbClient, audience: string): Promise<string[]> {
+  const audienceFilter = audience === 'all' ? sql`TRUE` :
+    sql`role = ${audience === 'admins' ? 'admin' : audience === 'patients' ? 'patient' : 'provider'}`;
+
+  type Row = { email: string };
+  const result = await db.execute<Row>(sql`
+    SELECT email
+    FROM users
+    WHERE is_active = true
+      AND deleted_at IS NULL
+      AND email_verified = true
+      AND ${audienceFilter}
+  `);
+  const rows: Row[] = Array.isArray(result) ? result : result.rows ?? [];
+  return rows.map((row) => row.email).filter(Boolean);
+}
+
 export async function listBroadcasts(db: DbClient, limit: number, offset: number) {
   return db.execute(sql`
     SELECT b.id, b.audience, b.type, b.title, b.body, b.channels, b.recipient_count,

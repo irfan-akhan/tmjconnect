@@ -15,6 +15,7 @@ export interface EmailService {
   sendWeeklyDigest(to: string, patientName: string, stats: WeeklyDigestStats): Promise<void>;
   sendEmailInvite(to: string, providerName: string, code: string): Promise<void>;
   sendEmailChangeCode(to: string, code: string): Promise<void>;
+  sendBroadcast(to: string, title: string, body: string, type: 'announcement' | 'system'): Promise<void>;
 }
 
 export interface WeeklyDigestStats {
@@ -271,6 +272,20 @@ function templates(appUrl: string) {
         `),
       };
     },
+
+    broadcast: (title: string, body: string, type: 'announcement' | 'system') => {
+      const safeTitle = escHtml(title);
+      const safeBody = escHtml(body).replace(/\n/g, '<br>');
+      const headingColor = type === 'system' ? '#c0392b' : BRAND_NAVY;
+      return {
+        subject: title,
+        html: baseTemplate(`
+          <h2 style="color:${headingColor};">${safeTitle}</h2>
+          <p style="line-height:1.6;color:#333;">${safeBody}</p>
+          ${ctaButton(appUrl, 'Open TMJConnect')}
+        `),
+      };
+    },
   };
 }
 
@@ -386,6 +401,10 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
     },
     async sendEmailChangeCode(to, code) {
       const { subject, html } = tmpl.emailChangeCode(code);
+      await send(to, subject, html);
+    },
+    async sendBroadcast(to, title, body, type) {
+      const { subject, html } = tmpl.broadcast(title, body, type);
       await send(to, subject, html);
     },
   };

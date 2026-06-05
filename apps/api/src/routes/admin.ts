@@ -58,6 +58,7 @@ import {
   listAdminLinkingCodes,
   listAdminLinks,
   listBroadcasts,
+  listBroadcastRecipientEmails,
   listFeatureFlags,
   listScheduledReports,
   updateFeatureFlag,
@@ -419,10 +420,32 @@ export function adminRouter(container: Container) {
         scheduled_at: req.body.scheduled_at ?? null,
       });
 
+      let emailSent = 0;
+      let emailFailed = 0;
+      const shouldSendEmailNow = req.body.channels.includes('email') && !req.body.scheduled_at;
+      if (shouldSendEmailNow) {
+        const recipientEmails = await listBroadcastRecipientEmails(container.db, req.body.audience);
+        const results = await Promise.allSettled(
+          recipientEmails.map((email) =>
+            container.email.sendBroadcast(email, req.body.title, req.body.body, req.body.type),
+          ),
+        );
+        emailSent = results.filter((result) => result.status === 'fulfilled').length;
+        emailFailed = results.length - emailSent;
+        if (emailFailed > 0) {
+          container.logger.warn(
+            { broadcastId: broadcast?.id, emailSent, emailFailed },
+            'Admin broadcast email delivery had failures',
+          );
+        }
+      }
+
       res.status(201).json({
         data: {
           broadcast_id: broadcast?.id,
           recipient_count: broadcast?.recipient_count ?? 0,
+          email_sent: emailSent,
+          email_failed: emailFailed,
         },
       });
     } catch (err) { next(err); }

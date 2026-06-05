@@ -31,7 +31,7 @@ tags:
   - name: Linking
     description: Patient-provider linking codes, acceptance, disconnection
   - name: Uploads
-    description: File uploads (video, avatar, report photos)
+    description: File uploads (exercise video thumbnails, videos, avatar, report photos)
   - name: Tracking
     description: Jaw mobility, medication, and sleep quality tracking
   - name: Insights
@@ -3661,6 +3661,34 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/UploadResult' }
 
+  /uploads/thumbnail:
+    post:
+      tags: [Uploads]
+      summary: Upload exercise thumbnail image (provider only)
+      description: Stores a JPEG or PNG poster image for an exercise video. Provider portals generate this image from the uploaded video frame and save the returned URL as `thumbnail_url` on the exercise.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "Max 2MB. Allowed: image/jpeg, image/png. Magic bytes validated."
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/UploadResult' }
+
   /uploads/avatar:
     post:
       tags: [Uploads]
@@ -5219,6 +5247,7 @@ paths:
     post:
       tags: [Admin]
       summary: Send a broadcast notification (or schedule one)
+      description: Creates a broadcast record. If `email` is selected and `scheduled_at` is omitted, email delivery is attempted immediately and delivery counts are returned.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -5249,6 +5278,8 @@ paths:
                     properties:
                       broadcast_id: { type: string, format: uuid }
                       recipient_count: { type: integer }
+                      email_sent: { type: integer, description: Number of immediate email deliveries accepted by the email provider. Zero when email is not selected or the broadcast is scheduled. }
+                      email_failed: { type: integer, description: Number of immediate email deliveries that failed. Zero when email is not selected or the broadcast is scheduled. }
     get:
       tags: [Admin]
       summary: List broadcasts
