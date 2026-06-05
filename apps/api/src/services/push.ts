@@ -26,6 +26,11 @@ export function createPushService(env: Env, logger: Logger): PushService {
     } else {
       logger.warn('[PushService] Firebase credentials not set — running in stub mode (no-op).');
     }
+  } else {
+    logger.info(
+      { projectId: env.FIREBASE_PROJECT_ID, clientEmail: env.FIREBASE_CLIENT_EMAIL, nodeEnv: env.NODE_ENV, appEnv: env.APP_ENV },
+      '[PushService] Firebase FCM configured',
+    );
   }
 
   let firebaseMessaging: import('firebase-admin/messaging').Messaging | null = null;
