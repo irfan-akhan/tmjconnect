@@ -19,12 +19,23 @@ export function createPushService(env: Env, logger: Logger): PushService {
     env.FIREBASE_CLIENT_EMAIL &&
     privateKey?.includes('-----BEGIN')
   );
+  const missingCredentialKeys = [
+    !env.FIREBASE_PROJECT_ID ? 'FIREBASE_PROJECT_ID' : null,
+    !env.FIREBASE_CLIENT_EMAIL ? 'FIREBASE_CLIENT_EMAIL' : null,
+    !privateKey?.includes('-----BEGIN') ? 'FIREBASE_PRIVATE_KEY' : null,
+  ].filter((key): key is string => Boolean(key));
 
   if (!hasCredentials) {
     if (isProduction) {
-      logger.error('Firebase credentials required in production. Push service will throw on use.');
+      logger.error(
+        { missingCredentialKeys, nodeEnv: env.NODE_ENV, appEnv: env.APP_ENV },
+        'Firebase credentials required in production. Push service will throw on use.',
+      );
     } else {
-      logger.warn('[PushService] Firebase credentials not set — running in stub mode (no-op).');
+      logger.warn(
+        { missingCredentialKeys, nodeEnv: env.NODE_ENV, appEnv: env.APP_ENV },
+        '[PushService] Firebase credentials not set — running in stub mode (no-op).',
+      );
     }
   } else {
     logger.info(
