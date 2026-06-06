@@ -16,5 +16,5 @@ export async function execute(deps: Deps, input: GetUserInput) {
     listLoginEvents(deps.db, 20, 0, { user_id: input.userId }),
   ]);
 
-  return { user, recent_audit_logs: recentAudit, recent_login_events: recentLogins };
+  return { user, recent_audit_logs: { items: recentAudit }, recent_login_events: { items: recentLogins } };
 }
