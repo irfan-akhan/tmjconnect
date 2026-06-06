@@ -32,6 +32,10 @@ export const adminSupportTicketListQuerySchema = commonListQuerySchema.extend({
   search: z.string().max(255).optional(),
 });
 
+export const adminSupportTicketUpdateSchema = z.object({
+  status: z.enum(['open', 'in_progress', 'resolved', 'closed']),
+});
+
 export const adminAccountRestoreReviewSchema = z.object({
   decision_note: z.string().max(1000).optional(),
 });

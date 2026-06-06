@@ -18,6 +18,7 @@ import {
   adminJobHistoryQuerySchema,
   adminAccountRestoreRequestListQuerySchema,
   adminSupportTicketListQuerySchema,
+  adminSupportTicketUpdateSchema,
   adminAccountRestoreReviewSchema,
 } from '@tmjconnect/shared';
 import * as GetStats from '../use-cases/admin/get-stats';
@@ -37,6 +38,7 @@ import * as GetJobSummaries from '../use-cases/admin/get-job-summaries';
 import * as ListJobHistory from '../use-cases/admin/list-job-history';
 import * as ListSupportTickets from '../use-cases/admin/list-support-tickets';
 import * as GetSupportTicket from '../use-cases/admin/get-support-ticket';
+import * as UpdateSupportTicket from '../use-cases/admin/update-support-ticket';
 import * as GetPlatformAnalytics from '../use-cases/admin/get-platform-analytics';
 import { runJobNow } from '../jobs';
 import { retryOutboxEntry, dropOutboxEntry, deleteSession } from '../db/queries/admin.queries';
@@ -256,6 +258,17 @@ export function adminRouter(container: Container) {
       const item = await GetSupportTicket.execute(container, { id: req.params.id });
       res.locals.auditResourceId = item.id;
       res.json({ data: item });
+    } catch (err) { next(err); }
+  });
+
+  router.patch('/support-tickets/:id', validate(adminSupportTicketUpdateSchema), auditLog('admin_support_ticket_updated', 'support_ticket'), async (req, res, next) => {
+    try {
+      const updated = await UpdateSupportTicket.execute(container, {
+        id: req.params.id,
+        status: req.body.status,
+      });
+      res.locals.auditResourceId = updated.id;
+      res.json({ data: updated });
     } catch (err) { next(err); }
   });
 

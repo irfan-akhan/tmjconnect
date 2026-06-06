@@ -167,3 +167,16 @@ export async function getSupportTicketForAdmin(
   const rows: AdminSupportTicketDetail[] = Array.isArray(result) ? result : result.rows ?? [];
   return rows[0] ?? null;
 }
+
+export async function updateSupportTicketStatus(
+  db: DbClient,
+  ticketId: string,
+  status: 'open' | 'in_progress' | 'resolved' | 'closed',
+): Promise<SupportTicket | null> {
+  const [row] = await db
+    .update(supportTickets)
+    .set({ status, updated_at: sql`NOW()` })
+    .where(eq(supportTickets.id, ticketId))
+    .returning();
+  return row ?? null;
+}
