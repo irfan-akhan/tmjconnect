@@ -4,6 +4,7 @@ import {
   registerProviderSchema,
   verifyEmailSchema,
   loginSchema,
+  accountRestoreRequestSchema,
   mfaVerifySchema,
   mfaVerifySetupSchema,
   mfaSmsSchema,
@@ -43,6 +44,7 @@ export type RegisterPatientInput = z.infer<typeof registerPatientSchema>;
 export type RegisterProviderInput = z.infer<typeof registerProviderSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type AccountRestoreRequestInput = z.infer<typeof accountRestoreRequestSchema>;
 export type MfaVerifyInput = z.infer<typeof mfaVerifySchema>;
 export type MfaVerifySetupInput = z.infer<typeof mfaVerifySetupSchema>;
 export type MfaSmsInput = z.infer<typeof mfaSmsSchema>;

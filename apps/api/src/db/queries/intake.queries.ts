@@ -111,14 +111,32 @@ export async function listAssignmentsByPatient(
     id: string; form_id: string; patient_id: string; provider_id: string; status: string; assigned_at: string; completed_at: string | null;
     form_title: string; form_description: string | null; form_fields: unknown;
     provider_name: string;
+    provider_first_name: string;
+    provider_last_name: string;
+    provider_avatar_url: string | null;
+    provider_email: string;
+    provider_license_type: string;
+    provider_specialty: string;
+    provider_clinic_name: string;
+    provider_credentials: string[] | null;
   };
   const res = await db.execute<Row>(sql`
     SELECT a.id, a.form_id, a.patient_id, a.provider_id, a.status, a.assigned_at::text, a.completed_at::text,
            f.title AS form_title, f.description AS form_description, f.fields AS form_fields,
-           COALESCE(p.first_name || ' ' || p.last_name, 'Provider') AS provider_name
+           COALESCE(p.first_name || ' ' || p.last_name, 'Provider') AS provider_name,
+           p.first_name AS provider_first_name,
+           p.last_name AS provider_last_name,
+           p.avatar_url AS provider_avatar_url,
+           u.email AS provider_email,
+           pd.license_type AS provider_license_type,
+           pd.specialty AS provider_specialty,
+           pd.clinic_name AS provider_clinic_name,
+           pd.credentials AS provider_credentials
     FROM intake_form_assignments a
     JOIN intake_forms f ON f.id = a.form_id
-    LEFT JOIN profiles p ON p.user_id = a.provider_id
+    JOIN profiles p ON p.user_id = a.provider_id
+    JOIN users u ON u.id = a.provider_id
+    JOIN provider_details pd ON pd.user_id = a.provider_id
     WHERE a.patient_id = ${patientId} AND a.status = 'pending'
     ORDER BY ${orderBy} ${orderDir}, a.assigned_at DESC
     LIMIT ${limit}

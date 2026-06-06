@@ -430,6 +430,17 @@ components:
         sets: { type: integer, minimum: 1 }
         status: { type: string, enum: [active, paused, completed] }
         assigned_at: { type: string, format: date-time }
+        provider_id: { type: string, format: uuid }
+        provider_first_name: { type: string }
+        provider_last_name: { type: string }
+        provider_avatar_url: { type: [string, "null"], format: uri }
+        provider_email: { type: string, format: email }
+        provider_license_type: { type: string }
+        provider_specialty: { type: string }
+        provider_clinic_name: { type: string }
+        provider_credentials:
+          type: [array, "null"]
+          items: { type: string }
 
     ExerciseCompletion:
       description: Record of a patient completing an exercise assignment for the day
@@ -513,6 +524,17 @@ components:
         submitted_at: { type: string, format: date-time }
         viewed_at: { type: [string, "null"], format: date-time }
         reviewed_at: { type: [string, "null"], format: date-time }
+        provider_first_name: { type: string, description: "Present in patient-facing report reads" }
+        provider_last_name: { type: string, description: "Present in patient-facing report reads" }
+        provider_avatar_url: { type: [string, "null"], format: uri, description: "Present in patient-facing report reads" }
+        provider_email: { type: string, format: email, description: "Present in patient-facing report reads" }
+        provider_license_type: { type: string, description: "Present in patient-facing report reads" }
+        provider_specialty: { type: string, description: "Present in patient-facing report reads" }
+        provider_clinic_name: { type: string, description: "Present in patient-facing report reads" }
+        provider_credentials:
+          description: Present in patient-facing report reads
+          type: [array, "null"]
+          items: { type: string }
         authored_by_user_id:
           type: [string, "null"]
           format: uuid
@@ -551,6 +573,17 @@ components:
         fulfilled_at: { type: [string, "null"], format: date-time }
         dismissed_at: { type: [string, "null"], format: date-time }
         created_at: { type: string, format: date-time }
+        provider_first_name: { type: string, description: "Present in patient-facing pending request lists" }
+        provider_last_name: { type: string, description: "Present in patient-facing pending request lists" }
+        provider_avatar_url: { type: [string, "null"], format: uri, description: "Present in patient-facing pending request lists" }
+        provider_email: { type: string, format: email, description: "Present in patient-facing pending request lists" }
+        provider_license_type: { type: string, description: "Present in patient-facing pending request lists" }
+        provider_specialty: { type: string, description: "Present in patient-facing pending request lists" }
+        provider_clinic_name: { type: string, description: "Present in patient-facing pending request lists" }
+        provider_credentials:
+          description: Present in patient-facing pending request lists
+          type: [array, "null"]
+          items: { type: string }
 
     ReportSummaryData:
       description: Auto-generated stats snapshot at time of report submission
@@ -630,6 +663,13 @@ components:
         last_name: { type: string }
         avatar_url: { type: [string, "null"], format: uri }
         linked_at: { type: string, format: date-time }
+        license_type: { type: string, description: "Present in patient's linked-provider view" }
+        specialty: { type: string, description: "Present in patient's linked-provider view" }
+        clinic_name: { type: string, description: "Present in patient's linked-provider view" }
+        credentials:
+          description: Present in patient's linked-provider view
+          type: [array, "null"]
+          items: { type: string }
         diagnosis: { type: [string, "null"], description: "Provider's working diagnosis for this patient (set via PATCH /providers/patients/:patientId/link)" }
 
     # ─── Uploads ───────────────────────────────────────────────────────────────
@@ -741,6 +781,26 @@ components:
         first_name: { type: string }
         last_name: { type: string }
         created_at: { type: string, format: date-time }
+        deleted_at: { type: [string, "null"], format: date-time, description: "Soft-delete timestamp. Present when includeDeleted=true or on detail responses." }
+
+    AccountRestoreRequest:
+      description: Deleted-account restore request row reviewed by admins
+      type: object
+      required: [id, email, role, status, requested_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: [string, "null"], format: uuid, description: "Deleted user being reviewed; null only if the user row was removed later." }
+        email: { type: string, format: email }
+        role: { type: string, enum: [patient, provider, admin] }
+        status: { type: string, enum: [pending, approved, rejected] }
+        reason: { type: [string, "null"], maxLength: 1000 }
+        requested_at: { type: string, format: date-time }
+        reviewed_at: { type: [string, "null"], format: date-time }
+        reviewed_by: { type: [string, "null"], format: uuid }
+        decision_note: { type: [string, "null"], maxLength: 1000 }
+        first_name: { type: [string, "null"] }
+        last_name: { type: [string, "null"] }
+        deleted_at: { type: [string, "null"], format: date-time, description: "Current user soft-delete timestamp. Null after approval restores the account." }
 
     AdminUserDetail:
       description: Full user detail with recent audit logs and login events
@@ -1093,6 +1153,16 @@ components:
           type: array
           items: { $ref: '#/components/schemas/IntakeFieldDef' }
         provider_name: { type: string }
+        provider_first_name: { type: string }
+        provider_last_name: { type: string }
+        provider_avatar_url: { type: [string, "null"], format: uri }
+        provider_email: { type: string, format: email }
+        provider_license_type: { type: string }
+        provider_specialty: { type: string }
+        provider_clinic_name: { type: string }
+        provider_credentials:
+          type: [array, "null"]
+          items: { type: string }
 
     IntakeResponse:
       description: A patient's submission to an intake form
@@ -1722,7 +1792,7 @@ paths:
                   - $ref: '#/components/schemas/TokenPair'
                   - $ref: '#/components/schemas/MfaRequired'
         '401': { description: Invalid credentials }
-        '403': { description: "WRONG_PORTAL (provider trying patient login), VERIFY_EMAIL, or ACCOUNT_INACTIVE" }
+        '403': { description: "WRONG_PORTAL (provider trying patient login), VERIFY_EMAIL, ACCOUNT_INACTIVE, or ACCOUNT_DELETED. ACCOUNT_DELETED means the 24-hour self-restore window has passed and the user can submit /auth/account-restore/request." }
         '429': { description: Account locked after 5 failed attempts }
 
   # ──────────────────────────── AUTH — PATIENT OPTIONAL MFA ─────────────────────
@@ -1825,7 +1895,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MfaRequired'
         '401': { description: Invalid credentials }
-        '403': { description: "WRONG_PORTAL (patient trying provider login), MFA_NOT_SETUP, VERIFY_EMAIL, or ACCOUNT_INACTIVE" }
+        '403': { description: "WRONG_PORTAL (patient trying provider login), MFA_NOT_SETUP, VERIFY_EMAIL, ACCOUNT_INACTIVE, or ACCOUNT_DELETED. ACCOUNT_DELETED means the 24-hour self-restore window has passed and the user can submit /auth/account-restore/request." }
         '429': { description: Account locked after 5 failed attempts }
 
   # ──────────────────────────── AUTH — MFA (PROVIDER ONLY) ──────────────────────
@@ -2069,6 +2139,37 @@ paths:
       responses:
         '200': { description: Always 200. Rate limited to 1 per 2 minutes. }
 
+  /auth/account-restore/request:
+    post:
+      tags: [Auth]
+      summary: Request admin review to restore a deleted account
+      description: |
+        Public endpoint used after login returns `ACCOUNT_DELETED`. The response is intentionally generic
+        and does not reveal whether an email exists. If the email belongs to a soft-deleted user and there
+        is no pending request, a pending account restore request is queued for admin review.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                reason: { type: string, maxLength: 1000, description: "Optional message for the admin reviewer." }
+      responses:
+        '202':
+          description: Request accepted generically
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    example: If this account can be restored, your request has been sent for admin review.
+
   /auth/logout:
     delete:
       tags: [Auth]
@@ -2196,10 +2297,20 @@ paths:
                   data: { $ref: '#/components/schemas/PatientProfile' }
     delete:
       tags: [Patients]
-      summary: Request account deletion (soft delete)
+      summary: Delete current patient account (soft delete)
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, description: "Current account password for confirmation" }
       responses:
-        '204': { description: Account deletion requested }
+        '204': { description: Account soft deleted }
+        '400': { description: Password is incorrect }
 
   /patients/me/sessions:
     get:
@@ -2782,6 +2893,22 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/ProviderProfile' }
+    delete:
+      tags: [Providers]
+      summary: Delete current provider account (soft delete)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, description: "Current account password for confirmation" }
+      responses:
+        '204': { description: Account soft deleted }
+        '400': { description: Password is incorrect }
 
   /providers/patients:
     get:
@@ -3629,7 +3756,14 @@ paths:
               properties:
                 code: { type: string, minLength: 6, maxLength: 6 }
       responses:
-        '201': { description: Link created. Both parties notified. }
+        '201':
+          description: Link created. Both parties notified.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Link' }
         '404': { description: Invalid or expired code }
         '409': { description: Already linked to this provider }
         '410': { description: Code expired }
@@ -4650,6 +4784,7 @@ paths:
         - { name: sortBy, in: query, schema: { type: string, enum: [created_at, first_name, last_name, email, role] } }
         - { name: role, in: query, schema: { type: string, enum: [patient, provider, admin] } }
         - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: includeDeleted, in: query, schema: { type: boolean }, description: "Include soft-deleted users with deleted_at populated." }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
       responses:
@@ -4713,6 +4848,109 @@ paths:
                       id: { type: string, format: uuid }
                       is_active: { type: boolean }
                       role: { type: string }
+
+  /admin/users/{id}/restore:
+    post:
+      tags: [Admin]
+      summary: Restore a soft-deleted user account
+      description: Clears `deleted_at` for the user. Admins can restore users even after the 24-hour self-restore login window has expired.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: User restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      deleted_at: { type: [string, "null"], format: date-time }
+        '404': { description: User not found }
+
+  /admin/account-restore-requests:
+    get:
+      tags: [Admin]
+      summary: List deleted-account restore requests
+      description: Offset-paginated admin review queue for users who requested account restoration after the self-restore window expired.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/sortOrderParam'
+        - $ref: '#/components/parameters/searchParam'
+        - { name: sortBy, in: query, schema: { type: string, enum: [requested_at, reviewed_at, email, status], default: requested_at } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected] } }
+        - { name: role, in: query, schema: { type: string, enum: [patient, provider, admin] } }
+      responses:
+        '200':
+          description: Restore requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AccountRestoreRequest' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+
+  /admin/account-restore-requests/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve an account restore request
+      description: Marks the request approved, clears the user's `deleted_at`, and sends an account-restored email notification.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision_note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Request approved and account restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AccountRestoreRequest' }
+        '404': { description: Pending restore request not found }
+
+  /admin/account-restore-requests/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject an account restore request
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision_note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Request rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AccountRestoreRequest' }
+        '404': { description: Pending restore request not found }
 
   /admin/audit-logs:
     get:

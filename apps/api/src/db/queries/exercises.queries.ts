@@ -3,7 +3,7 @@
  */
 import { eq, and, sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
-import { exerciseAssignments, exerciseCompletions, exercises, profiles } from '../schema';
+import { exerciseAssignments, exerciseCompletions, exercises, profiles, providerDetails, users } from '../schema';
 import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
@@ -40,6 +40,12 @@ export async function listAssignments(
       provider_id: exerciseAssignments.provider_id,
       provider_first_name: profiles.first_name,
       provider_last_name: profiles.last_name,
+      provider_avatar_url: profiles.avatar_url,
+      provider_email: users.email,
+      provider_license_type: providerDetails.license_type,
+      provider_specialty: providerDetails.specialty,
+      provider_clinic_name: providerDetails.clinic_name,
+      provider_credentials: providerDetails.credentials,
       completed_today: sql<boolean>`EXISTS (
         SELECT 1 FROM ${exerciseCompletions}
         WHERE ${exerciseCompletions.assignment_id} = ${exerciseAssignments.id}
@@ -49,6 +55,8 @@ export async function listAssignments(
     .from(exerciseAssignments)
     .innerJoin(exercises, eq(exerciseAssignments.exercise_id, exercises.id))
     .innerJoin(profiles, eq(profiles.user_id, exerciseAssignments.provider_id))
+    .innerJoin(users, eq(users.id, exerciseAssignments.provider_id))
+    .innerJoin(providerDetails, eq(providerDetails.user_id, exerciseAssignments.provider_id))
     .where(and(...whereConditions))
     .orderBy(exerciseAssignments.assigned_at);
 

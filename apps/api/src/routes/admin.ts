@@ -16,6 +16,9 @@ import {
   adminOutboxQuerySchema,
   adminSessionsQuerySchema,
   adminJobHistoryQuerySchema,
+  adminAccountRestoreRequestListQuerySchema,
+  adminSupportTicketListQuerySchema,
+  adminAccountRestoreReviewSchema,
 } from '@tmjconnect/shared';
 import * as GetStats from '../use-cases/admin/get-stats';
 import * as ListUsers from '../use-cases/admin/list-users';
@@ -32,6 +35,8 @@ import * as ListOutboxRecent from '../use-cases/admin/list-outbox-recent';
 import * as ListActiveSessions from '../use-cases/admin/list-active-sessions';
 import * as GetJobSummaries from '../use-cases/admin/get-job-summaries';
 import * as ListJobHistory from '../use-cases/admin/list-job-history';
+import * as ListSupportTickets from '../use-cases/admin/list-support-tickets';
+import * as GetSupportTicket from '../use-cases/admin/get-support-ticket';
 import * as GetPlatformAnalytics from '../use-cases/admin/get-platform-analytics';
 import { runJobNow } from '../jobs';
 import { retryOutboxEntry, dropOutboxEntry, deleteSession } from '../db/queries/admin.queries';
@@ -65,6 +70,13 @@ import {
   updateFeatureFlag,
   updateScheduledReport,
 } from '../db/queries/admin-p1p2.queries';
+import {
+  approveRestoreRequest,
+  countRestoreRequests,
+  getRestoreRequestUser,
+  listRestoreRequests,
+  rejectRestoreRequest,
+} from '../db/queries/account-restore.queries';
 import { dispatchBroadcast } from '../services/broadcastDispatch';
 
 const createBroadcastSchema = z.object({
@@ -151,8 +163,8 @@ export function adminRouter(container: Container) {
   router.get('/users', validate(adminUserListQuerySchema, 'query'), async (req, res, next) => {
     try {
       const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
-      const { search, role, is_active, from, to } = req.query as unknown as Omit<ListUsers.ListUsersInput, 'limit' | 'offset' | 'sortBy' | 'sortOrder'>;
-      const result = await ListUsers.execute(container, { limit, offset, sortBy: sortBy as ListUsers.ListUsersInput['sortBy'], sortOrder, search, role, is_active, from, to });
+      const { search, role, is_active, includeDeleted, from, to } = req.query as unknown as Omit<ListUsers.ListUsersInput, 'limit' | 'offset' | 'sortBy' | 'sortOrder'>;
+      const result = await ListUsers.execute(container, { limit, offset, sortBy: sortBy as ListUsers.ListUsersInput['sortBy'], sortOrder, search, role, is_active, includeDeleted, from, to });
       res.json({ data: result.items, meta: result.meta });
     } catch (err) { next(err); }
   });
@@ -166,6 +178,84 @@ export function adminRouter(container: Container) {
   router.patch('/users/:id', validate(adminUpdateUserSchema), auditLog('admin_user_updated', 'user'), async (req, res, next) => {
     try {
       res.json({ data: await UpdateUser.execute(container, { userId: req.params.id, fields: req.body }) });
+    } catch (err) { next(err); }
+  });
+
+  router.post('/users/:id/restore', auditLog('admin_user_restored', 'user'), async (req, res, next) => {
+    try {
+      res.json({ data: await UpdateUser.restore(container, req.params.id) });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/account-restore-requests', validate(adminAccountRestoreRequestListQuerySchema, 'query'), async (req, res, next) => {
+    try {
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const { status, role, search } = req.query as unknown as {
+        status?: 'pending' | 'approved' | 'rejected';
+        role?: 'patient' | 'provider' | 'admin';
+        search?: string;
+      };
+      const filters = { status, role, search };
+      const [items, total] = await Promise.all([
+        listRestoreRequests(container.db, limit, offset, filters, sortBy as 'requested_at' | 'reviewed_at' | 'email' | 'status', sortOrder),
+        countRestoreRequests(container.db, filters),
+      ]);
+      res.json({ data: items, meta: buildAdminPageMeta(total, limit, offset) });
+    } catch (err) { next(err); }
+  });
+
+  router.post('/account-restore-requests/:id/approve', validate(adminAccountRestoreReviewSchema), auditLog('admin_account_restore_approved', 'user'), async (req, res, next) => {
+    try {
+      const user = await getRestoreRequestUser(container.db, req.params.id);
+      const result = await approveRestoreRequest(container.db, req.params.id, req.user!.id, req.body.decision_note);
+      if (!result) {
+        res.status(404).json({ error: { code: 'RESTORE_REQUEST_NOT_FOUND', message: 'Pending restore request not found.' } });
+        return;
+      }
+      if (user?.email) {
+        await container.email.sendAccountRestoreApproved(user.email, user.first_name ?? 'there');
+      }
+      res.json({ data: result });
+    } catch (err) { next(err); }
+  });
+
+  router.post('/account-restore-requests/:id/reject', validate(adminAccountRestoreReviewSchema), auditLog('admin_account_restore_rejected', 'user'), async (req, res, next) => {
+    try {
+      const result = await rejectRestoreRequest(container.db, req.params.id, req.user!.id, req.body.decision_note);
+      if (!result) {
+        res.status(404).json({ error: { code: 'RESTORE_REQUEST_NOT_FOUND', message: 'Pending restore request not found.' } });
+        return;
+      }
+      res.json({ data: result });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/support-tickets', validate(adminSupportTicketListQuerySchema, 'query'), auditLog('admin_support_tickets_viewed', 'support_ticket'), async (req, res, next) => {
+    try {
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const { search, status, category } = req.query as unknown as {
+        search?: string;
+        status?: 'open' | 'in_progress' | 'resolved' | 'closed';
+        category?: 'technical' | 'billing' | 'clinical' | 'feature' | 'other';
+      };
+      const result = await ListSupportTickets.execute(container, {
+        limit,
+        offset,
+        sortBy: sortBy as ListSupportTickets.ListSupportTicketsInput['sortBy'],
+        sortOrder,
+        search,
+        status,
+        category,
+      });
+      res.json({ data: result.items, meta: result.meta });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/support-tickets/:id', auditLog('admin_support_ticket_viewed', 'support_ticket'), async (req, res, next) => {
+    try {
+      const item = await GetSupportTicket.execute(container, { id: req.params.id });
+      res.locals.auditResourceId = item.id;
+      res.json({ data: item });
     } catch (err) { next(err); }
   });
 

@@ -6,6 +6,7 @@ import {
   findUserForLogin,
   insertLoginEvent,
   getProfileFirstName,
+  restoreSoftDeletedUser,
 } from '../../db/queries/auth.queries';
 import { comparePassword, dummyPasswordCompare } from '../../utils/hash';
 import { signMfaToken } from '../../utils/jwt';
@@ -14,6 +15,8 @@ import { issueTokens, checkNewDevice } from './helpers';
 type Deps = Pick<Container, 'db' | 'email' | 'logger'> & {
   loginLimiter: RateLimiterPostgres;
 };
+
+const SOFT_DELETE_LOGIN_GRACE_MS = 24 * 60 * 60 * 1000;
 
 export type LoginInput = {
   role: 'patient' | 'provider' | 'admin';
@@ -94,6 +97,33 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
   loginLimiter.delete(input.email.toLowerCase()).catch(() => {});
   logger.debug({ userId: user.id }, 'login: password verified');
 
+  if (user.role !== input.role) {
+    logger.debug({ userId: user.id, actualRole: user.role, expectedRole: input.role }, 'login: rejected — wrong portal');
+    const portal = input.role === 'patient' ? 'patient' : input.role === 'admin' ? 'admin' : 'provider';
+    throw new AppError(403, 'WRONG_PORTAL', `This account is not a ${portal} account.`);
+  }
+
+  if (user.deleted_at) {
+    const deletedAt = new Date(user.deleted_at).getTime();
+    const withinGracePeriod = Number.isFinite(deletedAt) && Date.now() - deletedAt <= SOFT_DELETE_LOGIN_GRACE_MS;
+
+    if (!withinGracePeriod) {
+      logger.debug({ userId: user.id }, 'login: rejected — deleted account outside restore window');
+      await insertLoginEvent(db, {
+        user_id: user.id,
+        email: user.email,
+        success: false,
+        ip_address: input.ip,
+        device_info: input.deviceInfo,
+        failure_reason: 'account_deleted',
+      });
+      throw new AppError(403, 'ACCOUNT_DELETED', 'This account is no longer available. Contact support.');
+    }
+
+    await restoreSoftDeletedUser(db, user.id);
+    logger.info({ userId: user.id }, 'login: soft-deleted account restored within grace period');
+  }
+
   if (!user.email_verified) {
     logger.debug({ userId: user.id }, 'login: rejected — email not verified');
     throw new AppError(403, 'VERIFY_EMAIL', 'Please verify your email address before logging in.');
@@ -113,10 +143,6 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
 
   // Patient flow: tokens directly, or MFA if patient opted in.
   if (input.role === 'patient') {
-    if (user.role !== 'patient') {
-      logger.debug({ userId: user.id, actualRole: user.role }, 'login: rejected — wrong portal');
-      throw new AppError(403, 'WRONG_PORTAL', 'This account is not a patient account. Use the provider login.');
-    }
     if (user.mfa_enabled) {
       logger.debug({ userId: user.id }, 'login: patient mfa required, issuing mfa_token');
       return { type: 'mfa_required', mfa_token: signMfaToken(user.id) };
@@ -128,11 +154,6 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
   }
 
   // Provider & Admin flow: always require MFA.
-  if (user.role !== input.role) {
-    logger.debug({ userId: user.id, actualRole: user.role, expectedRole: input.role }, 'login: rejected — wrong portal');
-    const portal = input.role === 'admin' ? 'admin' : 'provider';
-    throw new AppError(403, 'WRONG_PORTAL', `This account is not a ${portal} account.`);
-  }
   if (!user.mfa_enabled) {
     logger.debug({ userId: user.id }, `login: rejected — ${input.role} has no MFA`);
     throw new AppError(403, 'MFA_NOT_SETUP', 'MFA is not set up. Please complete your account setup first.');

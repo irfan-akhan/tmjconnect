@@ -3,6 +3,7 @@ import { AppError } from '../../middleware/errorHandler';
 import {
   findPendingCode,
   acceptCodeTransaction,
+  getPatientProviderLinkDetails,
   getProviderName,
   getPatientName,
 } from '../../db/queries/linking.queries';
@@ -24,6 +25,9 @@ export async function execute(deps: Deps, input: AcceptCodeInput) {
   // Atomic: lock code row, check for existing link, update code, insert link.
   const link = await acceptCodeTransaction(db, codeRow.id, input.patientId, codeRow.provider_id);
   if (!link) throw new AppError(409, 'CONFLICT', 'You are already linked to this provider.');
+
+  const linkDetails = await getPatientProviderLinkDetails(db, input.patientId, codeRow.provider_id);
+  if (!linkDetails) throw new AppError(500, 'LINK_DETAILS_MISSING', 'Linked provider details were not found.');
 
   // Notify both parties (fire-and-forget).
   const [providerName, patientName] = await Promise.all([
@@ -47,5 +51,5 @@ export async function execute(deps: Deps, input: AcceptCodeInput) {
     data: { providerId: codeRow.provider_id, providerName: providerName ?? '', patientName: patientName ?? '', recipientRole: 'patient' },
   }).catch((err) => logger.warn({ err }, 'Link acceptance notification (patient) failed'));
 
-  return link;
+  return linkDetails;
 }

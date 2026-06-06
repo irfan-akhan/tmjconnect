@@ -14,6 +14,7 @@ import {
   mfaSmsSchema,
   refreshSchema,
   forgotPasswordSchema,
+  accountRestoreRequestSchema,
   resetPasswordSchema,
   resetPasswordVerifySchema,
   resetPasswordConfirmSchema,
@@ -48,6 +49,11 @@ import * as GetTosStatus from '../use-cases/auth/get-tos-status';
 import * as RequestEmailChange from '../use-cases/auth/request-email-change';
 import * as VerifyEmailChange from '../use-cases/auth/verify-email-change';
 import * as UpdateFcmToken from '../use-cases/auth/update-fcm-token';
+import {
+  findDeletedUserForRestoreRequest,
+  findPendingRestoreRequest,
+  insertRestoreRequest,
+} from '../db/queries/account-restore.queries';
 
 function extractDeviceInfo(req: { headers: Record<string, string | string[] | undefined> }): string {
   return (req.headers['user-agent'] ?? '').toString().substring(0, DEVICE_INFO_MAX_LENGTH);
@@ -298,6 +304,24 @@ export function authRouter(container: Container) {
     try {
       await ResendVerifyEmail.execute(container, { email: req.body.email });
       res.json({ message: 'If that email is unverified, a new code has been sent.' });
+    } catch (err) { next(err); }
+  });
+
+  router.post('/account-restore/request', validate(accountRestoreRequestSchema), async (req, res, next) => {
+    try {
+      const user = await findDeletedUserForRestoreRequest(container.db, req.body.email);
+      if (user) {
+        const existing = await findPendingRestoreRequest(container.db, user.id);
+        if (!existing) {
+          await insertRestoreRequest(container.db, {
+            user_id: user.id,
+            email: user.email,
+            role: user.role,
+            reason: req.body.reason,
+          });
+        }
+      }
+      res.status(202).json({ message: 'If this account can be restored, your request has been sent for admin review.' });
     } catch (err) { next(err); }
   });
 

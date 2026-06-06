@@ -6,6 +6,7 @@ export const adminUserListQuerySchema = commonListQuerySchema.extend({
   search: z.string().max(255).optional(),
   role: z.enum(['patient', 'provider', 'admin']).optional(),
   is_active: z.coerce.boolean().optional(),
+  includeDeleted: z.coerce.boolean().optional(),
   from: z.string().date().optional(),
   to: z.string().date().optional(),
 });
@@ -15,6 +16,24 @@ export const adminUpdateUserSchema = z.object({
   role: z.enum(['patient', 'provider', 'admin']).optional(),
   force_password_reset: z.boolean().optional(),
   force_mfa_reset: z.boolean().optional(),
+});
+
+export const adminAccountRestoreRequestListQuerySchema = commonListQuerySchema.extend({
+  sortBy: z.enum(['requested_at', 'reviewed_at', 'email', 'status']).optional(),
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
+  role: z.enum(['patient', 'provider', 'admin']).optional(),
+  search: z.string().max(255).optional(),
+});
+
+export const adminSupportTicketListQuerySchema = commonListQuerySchema.extend({
+  sortBy: z.enum(['created_at', 'status', 'category', 'email']).optional(),
+  status: z.enum(['open', 'in_progress', 'resolved', 'closed']).optional(),
+  category: z.enum(['technical', 'billing', 'clinical', 'feature', 'other']).optional(),
+  search: z.string().max(255).optional(),
+});
+
+export const adminAccountRestoreReviewSchema = z.object({
+  decision_note: z.string().max(1000).optional(),
 });
 
 export const auditLogQuerySchema = commonListQuerySchema.extend({

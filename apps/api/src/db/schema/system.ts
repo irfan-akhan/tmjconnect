@@ -141,6 +141,21 @@ export const supportTickets = pgTable('support_tickets', {
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`NOW()`),
 });
 
+// ─── account_restore_requests ─────────────────────────────────────────────────
+// Deleted users can request an admin review after the self-restore window has passed.
+export const accountRestoreRequests = pgTable('account_restore_requests', {
+  id: uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
+  user_id: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  email: varchar('email', { length: 255 }).notNull(),
+  role: varchar('role', { length: 20 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  reason: text('reason'),
+  requested_at: timestamp('requested_at', { withTimezone: true }).notNull().default(sql`NOW()`),
+  reviewed_at: timestamp('reviewed_at', { withTimezone: true }),
+  reviewed_by: uuid('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+  decision_note: text('decision_note'),
+});
+
 // ─── job_runs ────────────────────────────────────────────────────────────────────
 export const jobRuns = pgTable('job_runs', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),

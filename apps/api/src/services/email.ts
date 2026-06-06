@@ -27,6 +27,7 @@ export interface EmailService {
   sendSupportTicketReceived(to: string, firstName: string, ticketId: string, subject: string): Promise<void>;
   sendDataExported(to: string, firstName: string): Promise<void>;
   sendAccountDeleted(to: string, firstName: string): Promise<void>;
+  sendAccountRestoreApproved(to: string, firstName: string): Promise<void>;
   sendBroadcast(to: string, title: string, body: string, type: 'announcement' | 'system'): Promise<void>;
 }
 
@@ -501,6 +502,19 @@ function templates(appUrl: string) {
       };
     },
 
+    accountRestoreApproved: (firstName: string) => {
+      const name = escHtml(firstName || 'there');
+      return {
+        subject: 'Your TMJConnect account has been restored',
+        html: baseTemplate(`
+          <h2 style="color:${BRAND_NAVY};">Account restored</h2>
+          <p style="line-height:1.6;color:#333;">Hi ${name}, your TMJConnect account restoration request was approved.</p>
+          ${secondaryNote('You can now sign in again with your existing email and password.')}
+          ${ctaButton(appUrl, 'Sign in to TMJConnect')}
+        `),
+      };
+    },
+
     broadcast: (title: string, body: string, type: 'announcement' | 'system') => {
       const safeTitle = escHtml(title);
       const safeBody = escHtml(body).replace(/\n/g, '<br>');
@@ -679,6 +693,10 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
     },
     async sendAccountDeleted(to, firstName) {
       const { subject, html } = tmpl.accountDeleted(firstName);
+      await send(to, subject, html);
+    },
+    async sendAccountRestoreApproved(to, firstName) {
+      const { subject, html } = tmpl.accountRestoreApproved(firstName);
       await send(to, subject, html);
     },
     async sendBroadcast(to, title, body, type) {

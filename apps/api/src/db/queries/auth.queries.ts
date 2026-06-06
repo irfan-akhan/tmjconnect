@@ -39,13 +39,20 @@ export async function findUserForLogin(db: DbClient, email: string) {
       email_verified: users.email_verified,
       is_active: users.is_active,
       mfa_enabled: users.mfa_enabled,
+      deleted_at: users.deleted_at,
     })
     .from(users)
-    .where(and(
-      eq(sql`LOWER(${users.email})`, email.toLowerCase()),
-      isNull(users.deleted_at),
-    ))
+    .where(eq(sql`LOWER(${users.email})`, email.toLowerCase()))
     .limit(1);
+  return row ?? null;
+}
+
+export async function restoreSoftDeletedUser(db: DbClient, userId: string) {
+  const [row] = await db
+    .update(users)
+    .set({ deleted_at: null, updated_at: sql`NOW()` })
+    .where(eq(users.id, userId))
+    .returning({ id: users.id, deleted_at: users.deleted_at });
   return row ?? null;
 }
 

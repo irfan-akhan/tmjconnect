@@ -49,11 +49,35 @@ export async function listRequestsForPatientByProvider(
 }
 
 export async function listPendingRequestsForPatient(db: DbClient, patient: ScopedUser) {
-  return db
-    .select()
-    .from(reportRequests)
-    .where(scopeToUser(eq(reportRequests.status, 'pending'), reportRequests, patient))
-    .orderBy(desc(reportRequests.created_at));
+  type Row = typeof reportRequests.$inferSelect & {
+    provider_first_name: string;
+    provider_last_name: string;
+    provider_avatar_url: string | null;
+    provider_email: string;
+    provider_license_type: string;
+    provider_specialty: string;
+    provider_clinic_name: string;
+    provider_credentials: string[] | null;
+  };
+  const result = await db.execute<Row>(sql`
+    SELECT
+      rr.*,
+      p.first_name AS provider_first_name,
+      p.last_name AS provider_last_name,
+      p.avatar_url AS provider_avatar_url,
+      u.email AS provider_email,
+      pd.license_type AS provider_license_type,
+      pd.specialty AS provider_specialty,
+      pd.clinic_name AS provider_clinic_name,
+      pd.credentials AS provider_credentials
+    FROM report_requests rr
+    JOIN profiles p ON p.user_id = rr.provider_id
+    JOIN users u ON u.id = rr.provider_id
+    JOIN provider_details pd ON pd.user_id = rr.provider_id
+    WHERE rr.patient_id = ${patient.id} AND rr.status = 'pending'
+    ORDER BY rr.created_at DESC
+  `);
+  return Array.isArray(result) ? result : result.rows ?? [];
 }
 
 export async function insertRequest(

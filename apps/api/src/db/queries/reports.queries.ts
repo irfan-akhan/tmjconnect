@@ -11,7 +11,7 @@
  */
 import { eq, sql, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
-import { reports, reportResponses, idempotencyKeys, profiles } from '../schema';
+import { reports, reportResponses, idempotencyKeys, profiles, providerDetails, users } from '../schema';
 import { scopeToUser, type ScopedUser } from '../../utils/scopedQuery';
 
 type DbClient = Db['db'];
@@ -154,8 +154,19 @@ export async function getReportForPatient(db: DbClient, reportId: string, patien
       submitted_at: reports.submitted_at,
       viewed_at: reports.viewed_at,
       reviewed_at: reports.reviewed_at,
+      provider_first_name: profiles.first_name,
+      provider_last_name: profiles.last_name,
+      provider_avatar_url: profiles.avatar_url,
+      provider_email: users.email,
+      provider_license_type: providerDetails.license_type,
+      provider_specialty: providerDetails.specialty,
+      provider_clinic_name: providerDetails.clinic_name,
+      provider_credentials: providerDetails.credentials,
     })
     .from(reports)
+    .innerJoin(profiles, eq(profiles.user_id, reports.provider_id))
+    .innerJoin(users, eq(users.id, reports.provider_id))
+    .innerJoin(providerDetails, eq(providerDetails.user_id, reports.provider_id))
     .where(scopeToUser(eq(reports.id, reportId), reports, patient))
     .limit(1);
   return row ?? null;
@@ -168,10 +179,21 @@ export async function getReportResponsesForPatient(db: DbClient, reportId: strin
       id: reportResponses.id,
       report_id: reportResponses.report_id,
       provider_id: reportResponses.provider_id,
+      provider_first_name: profiles.first_name,
+      provider_last_name: profiles.last_name,
+      provider_avatar_url: profiles.avatar_url,
+      provider_email: users.email,
+      provider_license_type: providerDetails.license_type,
+      provider_specialty: providerDetails.specialty,
+      provider_clinic_name: providerDetails.clinic_name,
+      provider_credentials: providerDetails.credentials,
       message: reportResponses.message,
       responded_at: reportResponses.responded_at,
     })
     .from(reportResponses)
+    .innerJoin(profiles, eq(profiles.user_id, reportResponses.provider_id))
+    .innerJoin(users, eq(users.id, reportResponses.provider_id))
+    .innerJoin(providerDetails, eq(providerDetails.user_id, reportResponses.provider_id))
     .where(eq(reportResponses.report_id, reportId))
     .orderBy(reportResponses.responded_at);
 }
@@ -267,6 +289,12 @@ type PatientInboxRow = {
   submitted_at: string;
   provider_first_name: string;
   provider_last_name: string;
+  provider_avatar_url: string | null;
+  provider_email: string;
+  provider_license_type: string;
+  provider_specialty: string;
+  provider_clinic_name: string;
+  provider_credentials: string[] | null;
   response_count: string;
 };
 
@@ -303,9 +331,17 @@ export async function listMyReports(
       r.submitted_at::text AS submitted_at,
       p.first_name AS provider_first_name,
       p.last_name AS provider_last_name,
+      p.avatar_url AS provider_avatar_url,
+      u.email AS provider_email,
+      pd.license_type AS provider_license_type,
+      pd.specialty AS provider_specialty,
+      pd.clinic_name AS provider_clinic_name,
+      pd.credentials AS provider_credentials,
       (SELECT COUNT(*)::text FROM report_responses rr WHERE rr.report_id = r.id) AS response_count
     FROM reports r
     JOIN profiles p ON p.user_id = r.provider_id
+    JOIN users u ON u.id = r.provider_id
+    JOIN provider_details pd ON pd.user_id = r.provider_id
     WHERE ${where}
     ORDER BY ${orderBy} ${orderDir}, r.submitted_at DESC
     LIMIT ${limit}

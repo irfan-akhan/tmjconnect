@@ -13,6 +13,7 @@ export type ListUsersInput = {
   search?: string;
   role?: 'patient' | 'provider' | 'admin';
   is_active?: boolean;
+  includeDeleted?: boolean;
   from?: string;
   to?: string;
 };

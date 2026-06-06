@@ -121,6 +121,39 @@ export async function acceptCodeTransaction(
   });
 }
 
+export async function getPatientProviderLinkDetails(
+  db: DbClient,
+  patientId: string,
+  providerId: string,
+) {
+  const [row] = await db
+    .select({
+      link_id: patientProviderLinks.id,
+      provider_id: patientProviderLinks.provider_id,
+      first_name: profiles.first_name,
+      last_name: profiles.last_name,
+      avatar_url: profiles.avatar_url,
+      email: users.email,
+      license_type: providerDetails.license_type,
+      specialty: providerDetails.specialty,
+      clinic_name: providerDetails.clinic_name,
+      credentials: providerDetails.credentials,
+      linked_at: patientProviderLinks.linked_at,
+      consent_scope: patientProviderLinks.consent_scope,
+    })
+    .from(patientProviderLinks)
+    .innerJoin(profiles, eq(profiles.user_id, patientProviderLinks.provider_id))
+    .innerJoin(users, eq(users.id, patientProviderLinks.provider_id))
+    .innerJoin(providerDetails, eq(providerDetails.user_id, patientProviderLinks.provider_id))
+    .where(and(
+      eq(patientProviderLinks.patient_id, patientId),
+      eq(patientProviderLinks.provider_id, providerId),
+      isNull(patientProviderLinks.unlinked_at),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
 // ─── Disconnect ──────────────────────────────────────────────────────────────────
 
 export async function disconnectLink(

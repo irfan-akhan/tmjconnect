@@ -1,6 +1,6 @@
 import type { Container } from '../../config/container';
 import { AppError } from '../../middleware/errorHandler';
-import { updateUser } from '../../db/queries/admin.queries';
+import { restoreDeletedUser, updateUser } from '../../db/queries/admin.queries';
 
 type Deps = Pick<Container, 'db'>;
 
@@ -16,6 +16,12 @@ export type UpdateUserInput = {
 
 export async function execute(deps: Deps, input: UpdateUserInput) {
   const result = await updateUser(deps.db, input.userId, input.fields);
+  if (!result) throw new AppError(404, 'NOT_FOUND', 'User not found.');
+  return result;
+}
+
+export async function restore(deps: Deps, userId: string) {
+  const result = await restoreDeletedUser(deps.db, userId);
   if (!result) throw new AppError(404, 'NOT_FOUND', 'User not found.');
   return result;
 }

@@ -66,13 +66,14 @@ type UserFilters = {
   search?: string;
   role?: 'patient' | 'provider' | 'admin';
   is_active?: boolean;
+  includeDeleted?: boolean;
   from?: string;
   to?: string;
 };
 
 function buildUserFilters(filters: UserFilters) {
   return sql`
-    u.deleted_at IS NULL
+    ${filters.includeDeleted ? sql`true` : sql`u.deleted_at IS NULL`}
     ${filters.search ? sql`AND (LOWER(p.first_name) LIKE ${`%${filters.search.toLowerCase()}%`} OR LOWER(p.last_name) LIKE ${`%${filters.search.toLowerCase()}%`} OR LOWER(u.email) LIKE ${`%${filters.search.toLowerCase()}%`})` : sql``}
     ${filters.role ? sql`AND u.role = ${filters.role}` : sql``}
     ${filters.is_active !== undefined ? sql`AND u.is_active = ${filters.is_active}` : sql``}
@@ -88,6 +89,7 @@ type UserListRow = {
   is_active: boolean;
   email_verified: boolean;
   mfa_enabled: boolean;
+  deleted_at: string | null;
   first_name: string;
   last_name: string;
   created_at: string;
@@ -115,6 +117,7 @@ export async function listUsers(
   const result = await db.execute<UserListRow>(sql`
     SELECT
       u.id, u.email, u.role, u.is_active, u.email_verified, u.mfa_enabled,
+      u.deleted_at::text AS deleted_at,
       p.first_name, p.last_name,
       u.created_at::text AS created_at
     FROM users u
@@ -194,6 +197,15 @@ export async function updateUser(
     .set(setFields as Partial<typeof users.$inferInsert>)
     .where(eq(users.id, userId))
     .returning({ id: users.id, is_active: users.is_active, role: users.role });
+  return row ?? null;
+}
+
+export async function restoreDeletedUser(db: DbClient, userId: string) {
+  const [row] = await db
+    .update(users)
+    .set({ deleted_at: null, updated_at: sql`NOW()` })
+    .where(eq(users.id, userId))
+    .returning({ id: users.id, email: users.email, role: users.role, is_active: users.is_active, deleted_at: users.deleted_at });
   return row ?? null;
 }
 

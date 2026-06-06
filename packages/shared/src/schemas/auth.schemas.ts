@@ -61,6 +61,11 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const accountRestoreRequestSchema = z.object({
+  email: z.string().email().toLowerCase(),
+  reason: z.string().max(1000).optional(),
+});
+
 // ─── MFA Setup ───────────────────────────────────────────────────────────────────
 export const mfaVerifySetupSchema = z.object({
   code: z.string().length(6).regex(/^\d{6}$/, 'Code must be 6 digits'),
