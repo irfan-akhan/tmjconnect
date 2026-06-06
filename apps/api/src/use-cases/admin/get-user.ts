@@ -12,8 +12,8 @@ export async function execute(deps: Deps, input: GetUserInput) {
   if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found.');
 
   const [recentAudit, recentLogins] = await Promise.all([
-    listAuditLogs(deps.db, 1, 20, { user_id: input.userId }),
-    listLoginEvents(deps.db, 1, 20, { user_id: input.userId }),
+    listAuditLogs(deps.db, 20, 0, { user_id: input.userId }),
+    listLoginEvents(deps.db, 20, 0, { user_id: input.userId }),
   ]);
 
   return { user, recent_audit_logs: recentAudit, recent_login_events: recentLogins };
