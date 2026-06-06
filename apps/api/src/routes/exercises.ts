@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate';
 import { assignmentListQuerySchema } from '@tmjconnect/shared';
 import { parseListQuery, buildListResponse } from '../utils/listHelpers';
 import * as GetAssignments from '../use-cases/exercises/get-assignments';
+import * as GetAssignmentById from '../use-cases/exercises/get-assignment-by-id';
 import * as CompleteAssignment from '../use-cases/exercises/complete-assignment';
 
 export function exercisesRouter(container: Container) {
@@ -31,6 +32,16 @@ export function exercisesRouter(container: Container) {
       }
     },
   );
+
+  router.get('/assignments/:assignmentId', auditLog('patient_viewed_assignment', 'exercise_assignment'), async (req, res, next) => {
+    try {
+      const data = await GetAssignmentById.execute(container, {
+        user: req.user!,
+        assignmentId: req.params.assignmentId,
+      });
+      res.json({ data });
+    } catch (err) { next(err); }
+  });
 
   router.post('/assignments/:assignmentId/complete', auditLog('exercise_completed', 'exercise_assignment'), async (req, res, next) => {
     try {

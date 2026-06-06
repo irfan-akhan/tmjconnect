@@ -70,6 +70,62 @@ export async function listAssignments(
   return query;
 }
 
+export async function getAssignmentById(
+  db: DbClient,
+  user: ScopedUser,
+  assignmentId: string,
+) {
+  const [row] = await db
+    .select({
+      assignment_id: exerciseAssignments.id,
+      patient_id: exerciseAssignments.patient_id,
+      exercise_id: exercises.id,
+      exercise_provider_id: exercises.provider_id,
+      title: exercises.title,
+      description: exercises.description,
+      duration_seconds: exercises.duration_seconds,
+      category: exercises.category,
+      instructions: exercises.instructions,
+      video_url: exercises.video_url,
+      thumbnail_url: exercises.thumbnail_url,
+      exercise_created_at: exercises.created_at,
+      exercise_updated_at: exercises.updated_at,
+      frequency: exerciseAssignments.frequency,
+      sets: exerciseAssignments.sets,
+      status: exerciseAssignments.status,
+      assigned_at: exerciseAssignments.assigned_at,
+      provider_id: exerciseAssignments.provider_id,
+      provider_first_name: profiles.first_name,
+      provider_last_name: profiles.last_name,
+      provider_avatar_url: profiles.avatar_url,
+      provider_email: users.email,
+      provider_license_type: providerDetails.license_type,
+      provider_specialty: providerDetails.specialty,
+      provider_clinic_name: providerDetails.clinic_name,
+      provider_credentials: providerDetails.credentials,
+      completed_today: sql<boolean>`EXISTS (
+        SELECT 1 FROM ${exerciseCompletions}
+        WHERE ${exerciseCompletions.assignment_id} = ${exerciseAssignments.id}
+          AND DATE(${exerciseCompletions.completed_at}) = CURRENT_DATE
+      )`,
+    })
+    .from(exerciseAssignments)
+    .innerJoin(exercises, eq(exerciseAssignments.exercise_id, exercises.id))
+    .innerJoin(profiles, eq(profiles.user_id, exerciseAssignments.provider_id))
+    .innerJoin(users, eq(users.id, exerciseAssignments.provider_id))
+    .innerJoin(providerDetails, eq(providerDetails.user_id, exerciseAssignments.provider_id))
+    .where(
+      scopeToUser(
+        eq(exerciseAssignments.id, assignmentId),
+        exerciseAssignments,
+        user,
+      ),
+    )
+    .limit(1);
+
+  return row ?? null;
+}
+
 export async function findActiveAssignment(
   db: DbClient,
   assignmentId: string,
