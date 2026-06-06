@@ -43,7 +43,7 @@ export const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 3;
 export const PROVIDER_SESSION_TIMEOUT_MINUTES = 15;
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────────
-export const RATE_LIMIT_GENERAL_MAX = 100;
+export const RATE_LIMIT_GENERAL_MAX = 200;
 export const RATE_LIMIT_GENERAL_WINDOW_MS = 15 * 60 * 1000;
 
 export const RATE_LIMIT_AUTH_MAX = 10;

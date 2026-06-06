@@ -65,7 +65,7 @@ function ipMiddleware(limiter: RateLimiterPostgres): RequestHandler {
  * createRateLimiters(pool) — Five IP-keyed middleware tiers (unchanged external API).
  *
  * Tiers per architecture spec Section 14.3:
- *   general      — 100 req / 15 min (mounted globally on all routes)
+ *   general      — 200 req / 15 min (mounted globally on all routes)
  *   auth         — 10 req  / 15 min (login, register, forgot-password)
  *   mfa          — 5 req   / 5 min  (/auth/mfa/* routes)
  *   passwordReset— 3 req   / 1 hr   (/auth/reset-password)
