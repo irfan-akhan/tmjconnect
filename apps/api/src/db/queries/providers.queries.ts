@@ -45,6 +45,7 @@ export async function getProviderWithProfile(db: DbClient, userId: string) {
       avatar_url: profiles.avatar_url,
       city: profiles.city,
       state: profiles.state,
+      country: profiles.country,
       timezone: profiles.timezone,
       profile_updated_at: profiles.updated_at,
       license_number: providerDetails.license_number,
@@ -68,6 +69,7 @@ export async function updateProviderProfile(
     last_name?: string;
     city?: string | null;
     state?: string | null;
+    country?: 'US' | 'CA' | 'IN';
     timezone?: string;
     avatar_url?: string | null;
   },

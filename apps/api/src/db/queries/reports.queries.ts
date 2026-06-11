@@ -274,6 +274,7 @@ export async function listProviderReports(
 
 // ─── Patient's own reports (list + count) ───────────────────────────────────────
 type PatientReportFilters = {
+  status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
   urgency?: 'routine' | 'concerning' | 'urgent';
   from?: string;
   to?: string;
@@ -301,6 +302,7 @@ type PatientInboxRow = {
 function buildPatientReportFilters(patientId: string, filters: PatientReportFilters) {
   return sql`
     r.patient_id = ${patientId}
+    ${filters.status ? sql`AND r.status = ${filters.status}` : sql``}
     ${filters.urgency ? sql`AND r.urgency = ${filters.urgency}` : sql``}
     ${filters.from ? sql`AND r.submitted_at >= ${filters.from}::timestamptz` : sql``}
     ${filters.to ? sql`AND r.submitted_at <= (${filters.to}::date + INTERVAL '1 day')` : sql``}
@@ -313,13 +315,14 @@ export async function listMyReports(
   limit: number,
   offset: number,
   filters: PatientReportFilters,
-  sortBy: 'created_at' | 'urgency' = 'created_at',
+  sortBy: 'created_at' | 'urgency' | 'status' = 'created_at',
   sortOrder: SortOrder = 'desc',
 ) {
   const where = buildPatientReportFilters(patientId, filters);
   const orderBy = {
     created_at: sql`r.submitted_at`,
     urgency: sql`CASE r.urgency WHEN 'urgent' THEN 1 WHEN 'concerning' THEN 2 ELSE 3 END`,
+    status: sql`r.status`,
   }[sortBy] ?? sql`r.submitted_at`;
   const orderDir = sortDirection(sortOrder);
 

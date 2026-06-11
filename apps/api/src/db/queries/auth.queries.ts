@@ -169,6 +169,7 @@ export type RegisterData = {
   first_name: string;
   last_name: string;
   phone: string;
+  country: 'US' | 'CA' | 'IN';
   timezone: string;
   date_of_birth?: string;
   license_number?: string;
@@ -197,6 +198,7 @@ export async function createUserTransaction(db: DbClient, data: RegisterData): P
       user_id: newUser.id,
       first_name: data.first_name,
       last_name: data.last_name,
+      country: data.country,
       date_of_birth: data.date_of_birth ?? null,
       timezone: data.timezone,
     });

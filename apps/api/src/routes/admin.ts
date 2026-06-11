@@ -180,7 +180,7 @@ export function adminRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  // ─── Platform exercise catalog ───────────────────────────────────────────────
+  // ─── Exercise catalog ────────────────────────────────────────────────────────
   router.get('/exercises', auditLog('admin_platform_exercises_viewed', 'exercise'), async (req, res, next) => {
     try {
       const { limit, offset } = parseAdminPage(req.query as Record<string, unknown>);
@@ -203,7 +203,7 @@ export function adminRouter(container: Container) {
     try {
       const data = await updatePlatformExercise(container.db, req.params.id, req.body);
       if (!data) {
-        res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Platform exercise not found.' } });
+        res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exercise not found.' } });
         return;
       }
       res.json({ data });

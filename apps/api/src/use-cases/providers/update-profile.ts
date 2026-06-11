@@ -11,6 +11,7 @@ export type UpdateProfileInput = {
     last_name?: string;
     city?: string | null;
     state?: string | null;
+    country?: 'US' | 'CA' | 'IN';
     timezone?: string;
     avatar_url?: string | null;
     license_number?: string;
@@ -22,7 +23,7 @@ export type UpdateProfileInput = {
 };
 
 export async function execute(deps: Deps, input: UpdateProfileInput) {
-  const { first_name, last_name, city, state, timezone, avatar_url, ...providerFields } = input.fields;
+  const { first_name, last_name, city, state, country, timezone, avatar_url, ...providerFields } = input.fields;
 
   // If avatar_url is being changed (set to new URL or nulled), delete the
   // old blob to avoid orphaning storage. Best-effort — failures are logged
@@ -38,7 +39,7 @@ export async function execute(deps: Deps, input: UpdateProfileInput) {
   await updateProviderProfile(
     deps.db,
     input.userId,
-    { first_name, last_name, city, state, timezone, avatar_url },
+    { first_name, last_name, city, state, country, timezone, avatar_url },
     providerFields,
   );
 

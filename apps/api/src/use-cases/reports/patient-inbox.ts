@@ -8,8 +8,9 @@ export type PatientInboxInput = {
   patientId: string;
   limit: number;
   offset: number;
-  sortBy?: 'created_at' | 'urgency';
+  sortBy?: 'created_at' | 'urgency' | 'status';
   sortOrder?: SortOrder;
+  status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
   urgency?: 'routine' | 'concerning' | 'urgent';
   from?: string;
   to?: string;

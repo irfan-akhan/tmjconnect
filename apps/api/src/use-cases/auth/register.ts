@@ -13,6 +13,7 @@ export type RegisterInput = {
   first_name: string;
   last_name: string;
   phone: string;
+  country: 'US' | 'CA' | 'IN';
   date_of_birth?: string;
   timezone?: string;
   license_number?: string;
@@ -45,6 +46,7 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
     first_name: input.first_name,
     last_name: input.last_name,
     phone: input.phone,
+    country: input.country,
     date_of_birth: input.date_of_birth,
     timezone: input.timezone ?? 'America/Chicago',
     license_number: input.license_number,

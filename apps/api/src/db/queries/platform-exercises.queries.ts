@@ -1,6 +1,6 @@
-import { and, count, desc, eq } from 'drizzle-orm';
+import { count, desc, eq } from 'drizzle-orm';
 import type { Db } from '../../config/database';
-import { exercises } from '../schema';
+import { exercises, providerDetails, profiles, users } from '../schema';
 
 type DbClient = Db['db'];
 
@@ -17,9 +17,33 @@ type PlatformExerciseInput = {
 
 export async function listPlatformExercises(db: DbClient, limit: number, offset: number) {
   return db
-    .select()
+    .select({
+      id: exercises.id,
+      owner_type: exercises.owner_type,
+      provider_id: exercises.provider_id,
+      status: exercises.status,
+      title: exercises.title,
+      description: exercises.description,
+      duration_seconds: exercises.duration_seconds,
+      category: exercises.category,
+      instructions: exercises.instructions,
+      video_url: exercises.video_url,
+      thumbnail_url: exercises.thumbnail_url,
+      created_at: exercises.created_at,
+      updated_at: exercises.updated_at,
+      provider_email: users.email,
+      provider_first_name: profiles.first_name,
+      provider_last_name: profiles.last_name,
+      provider_clinic_name: providerDetails.clinic_name,
+      provider_specialty: providerDetails.specialty,
+      provider_license_number: providerDetails.license_number,
+      provider_license_type: providerDetails.license_type,
+      provider_credentials: providerDetails.credentials,
+    })
     .from(exercises)
-    .where(eq(exercises.owner_type, 'platform'))
+    .leftJoin(users, eq(exercises.provider_id, users.id))
+    .leftJoin(profiles, eq(exercises.provider_id, profiles.user_id))
+    .leftJoin(providerDetails, eq(exercises.provider_id, providerDetails.user_id))
     .orderBy(desc(exercises.created_at))
     .limit(limit)
     .offset(offset);
@@ -28,8 +52,7 @@ export async function listPlatformExercises(db: DbClient, limit: number, offset:
 export async function countPlatformExercises(db: DbClient) {
   const [row] = await db
     .select({ total: count() })
-    .from(exercises)
-    .where(eq(exercises.owner_type, 'platform'));
+    .from(exercises);
   return row?.total ?? 0;
 }
 
@@ -60,7 +83,7 @@ export async function updatePlatformExercise(
   const [row] = await db
     .update(exercises)
     .set({ ...data, updated_at: new Date() })
-    .where(and(eq(exercises.id, id), eq(exercises.owner_type, 'platform')))
+    .where(eq(exercises.id, id))
     .returning();
   return row ?? null;
 }

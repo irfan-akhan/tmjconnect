@@ -13,6 +13,7 @@ import {
   mfaVerifySchema,
   mfaSmsSchema,
   refreshSchema,
+  logoutAllSchema,
   forgotPasswordSchema,
   accountRestoreRequestSchema,
   resetPasswordSchema,
@@ -332,9 +333,13 @@ export function authRouter(container: Container) {
     } catch (err) { next(err); }
   });
 
-  router.delete('/logout-all', authenticate, auditLog('auth.logout_all'), async (req, res, next) => {
+  router.delete('/logout-all', authenticate, validate(logoutAllSchema), auditLog('auth.logout_all'), async (req, res, next) => {
     try {
-      await LogoutAll.execute(container, { userId: req.user!.id, currentDeviceInfo: extractDeviceInfo(req) });
+      await LogoutAll.execute(container, {
+        userId: req.user!.id,
+        password: req.body.password,
+        currentDeviceInfo: extractDeviceInfo(req),
+      });
       res.json({ message: 'Logged out from all other devices.' });
     } catch (err) { next(err); }
   });

@@ -37,6 +37,7 @@ export async function getPatientWithProfile(db: Db['db'], userId: string) {
       avatar_url: profiles.avatar_url,
       city: profiles.city,
       state: profiles.state,
+      country: profiles.country,
       timezone: profiles.timezone,
       profile_updated_at: profiles.updated_at,
     })
@@ -56,6 +57,7 @@ export async function updatePatientProfile(
     gender?: string | null;
     city?: string | null;
     state?: string | null;
+    country?: 'US' | 'CA' | 'IN';
     timezone?: string;
     avatar_url?: string | null;
   },

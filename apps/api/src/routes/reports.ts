@@ -87,13 +87,14 @@ export function reportsRouter(container: Container) {
     async (req, res, next) => {
       try {
         const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
-        const { urgency, from, to } = req.query as unknown as {
+        const { status, urgency, from, to } = req.query as unknown as {
+          status?: 'submitted' | 'viewed' | 'reviewed' | 'responded';
           urgency?: 'routine' | 'concerning' | 'urgent';
           from?: string; to?: string;
         };
         const result = await PatientInbox.execute(container, {
           patientId: req.user!.id,
-          limit, offset, sortBy: sortBy as PatientInbox.PatientInboxInput['sortBy'], sortOrder, urgency, from, to,
+          limit, offset, sortBy: sortBy as PatientInbox.PatientInboxInput['sortBy'], sortOrder, status, urgency, from, to,
         });
         res.json({ data: result.items, meta: result.meta });
       } catch (err) { next(err); }

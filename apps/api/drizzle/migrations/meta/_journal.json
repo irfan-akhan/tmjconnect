@@ -120,6 +120,13 @@
       "when": 1744329616000,
       "tag": "0017_platform_exercises",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1744329617000,
+      "tag": "0018_profile_country",
+      "breakpoints": true
     }
   ]
 }

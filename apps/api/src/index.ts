@@ -76,6 +76,17 @@ async function bootstrap() {
       return;
     }
 
+    // Uploaded media is intentionally embedded by the admin/provider/mobile
+    // clients from a different origin than the API host. Helmet's default
+    // CORP=same-origin blocks <video> playback even though the file itself is
+    // reachable in a direct tab, so serve uploads with media-specific headers.
+    if (req.path.startsWith('/uploads')) {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+      next();
+      return;
+    }
+
     securityHeaders(req, res, next);
   });
 
@@ -166,6 +177,10 @@ async function bootstrap() {
       express.static(path.resolve(container.env.UPLOAD_DIR), {
         index: false,
         fallthrough: false,
+        setHeaders(res) {
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+        },
       }),
     );
   }

@@ -165,6 +165,7 @@ export async function getUserDetail(db: DbClient, userId: string) {
       avatar_url: profiles.avatar_url,
       city: profiles.city,
       state: profiles.state,
+      country: profiles.country,
       timezone: profiles.timezone,
       profile_updated_at: profiles.updated_at,
     })

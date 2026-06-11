@@ -13,6 +13,7 @@ export type UpdateProfileInput = {
     gender?: string | null;
     city?: string | null;
     state?: string | null;
+    country?: 'US' | 'CA' | 'IN';
     timezone?: string;
     avatar_url?: string | null;
   };

@@ -59,6 +59,7 @@ export const profiles = pgTable('profiles', {
   avatar_url: text('avatar_url'),
   city: varchar('city', { length: 100 }),
   state: varchar('state', { length: 50 }),
+  country: varchar('country', { length: 2 }).notNull().default('US'),
   // IANA timezone string (e.g. 'America/New_York'). Used for reminders and digest timing.
   timezone: varchar('timezone', { length: 50 }).notNull().default('America/Chicago'),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().default(sql`NOW()`),
