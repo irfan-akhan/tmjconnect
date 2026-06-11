@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import type { Request, Response, NextFunction } from 'express';
 import type { Container } from '../config/container';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, authorizeAny } from '../middleware/auth';
 import { auditLog } from '../middleware/audit';
 import { AppError } from '../middleware/errorHandler';
 import {
@@ -83,8 +83,8 @@ export function uploadsRouter(container: Container) {
   const reportPhotoUpload = createUpload(MAX_REPORT_PHOTO_SIZE_BYTES, ALLOWED_IMAGE_MIMES);
   const thumbnailUpload = createUpload(MAX_THUMBNAIL_SIZE_BYTES, ALLOWED_IMAGE_MIMES);
 
-  router.post('/video', authorize('provider'), videoUpload.single('file'), auditLog('video_uploaded', 'exercise'), uploadHandler(container, 'videos', ALLOWED_VIDEO_MIMES));
-  router.post('/thumbnail', authorize('provider'), thumbnailUpload.single('file'), auditLog('thumbnail_uploaded', 'exercise'), uploadHandler(container, 'thumbnails', ALLOWED_IMAGE_MIMES));
+  router.post('/video', authorizeAny('provider', 'admin'), videoUpload.single('file'), auditLog('video_uploaded', 'exercise'), uploadHandler(container, 'videos', ALLOWED_VIDEO_MIMES));
+  router.post('/thumbnail', authorizeAny('provider', 'admin'), thumbnailUpload.single('file'), auditLog('thumbnail_uploaded', 'exercise'), uploadHandler(container, 'thumbnails', ALLOWED_IMAGE_MIMES));
   router.post('/avatar', avatarUpload.single('file'), auditLog('avatar_uploaded', 'user'), uploadHandler(container, 'avatars', ALLOWED_IMAGE_MIMES));
   router.post('/report-photo', reportPhotoUpload.single('file'), auditLog('report_photo_uploaded', 'report'), uploadHandler(container, 'report-photos', ALLOWED_IMAGE_MIMES));
 

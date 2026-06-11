@@ -43,6 +43,12 @@ import * as GetPlatformAnalytics from '../use-cases/admin/get-platform-analytics
 import { runJobNow } from '../jobs';
 import { retryOutboxEntry, dropOutboxEntry, deleteSession } from '../db/queries/admin.queries';
 import {
+  countPlatformExercises,
+  insertPlatformExercise,
+  listPlatformExercises,
+  updatePlatformExercise,
+} from '../db/queries/platform-exercises.queries';
+import {
   adminGlobalSearch,
   countAdminLinkingCodes,
   countAdminLinks,
@@ -112,6 +118,19 @@ const createFeatureFlagSchema = z.object({
 
 const updateFeatureFlagSchema = createFeatureFlagSchema.partial();
 
+const platformExerciseSchema = z.object({
+  title: z.string().min(1).max(255),
+  description: z.string().max(5000).nullable().optional(),
+  duration_seconds: z.number().int().min(1).nullable().optional(),
+  category: z.string().max(100).nullable().optional(),
+  instructions: z.string().max(10000).nullable().optional(),
+  video_url: z.string().url().nullable().optional(),
+  thumbnail_url: z.string().url().nullable().optional(),
+  status: z.enum(['draft', 'published', 'archived']).default('draft'),
+});
+
+const updatePlatformExerciseSchema = platformExerciseSchema.partial();
+
 function parseAdminPage(query: Record<string, unknown>, fallbackLimit = 20) {
   const parsedLimit = Number.parseInt(String(query.limit ?? fallbackLimit), 10);
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : fallbackLimit;
@@ -158,6 +177,36 @@ export function adminRouter(container: Container) {
       const parsedDays = Number.parseInt(String(req.query.days ?? '30'), 10);
       const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 1), 365) : 30;
       res.json({ data: await GetPlatformAnalytics.execute(container, { days }) });
+    } catch (err) { next(err); }
+  });
+
+  // ─── Platform exercise catalog ───────────────────────────────────────────────
+  router.get('/exercises', auditLog('admin_platform_exercises_viewed', 'exercise'), async (req, res, next) => {
+    try {
+      const { limit, offset } = parseAdminPage(req.query as Record<string, unknown>);
+      const [items, total] = await Promise.all([
+        listPlatformExercises(container.db, limit, offset),
+        countPlatformExercises(container.db),
+      ]);
+      res.json({ data: items, meta: buildAdminPageMeta(total, limit, offset) });
+    } catch (err) { next(err); }
+  });
+
+  router.post('/exercises', validate(platformExerciseSchema), auditLog('admin_platform_exercise_created', 'exercise'), async (req, res, next) => {
+    try {
+      const data = await insertPlatformExercise(container.db, req.body);
+      res.status(201).json({ data });
+    } catch (err) { next(err); }
+  });
+
+  router.patch('/exercises/:id', validate(updatePlatformExerciseSchema), auditLog('admin_platform_exercise_updated', 'exercise'), async (req, res, next) => {
+    try {
+      const data = await updatePlatformExercise(container.db, req.params.id, req.body);
+      if (!data) {
+        res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Platform exercise not found.' } });
+        return;
+      }
+      res.json({ data });
     } catch (err) { next(err); }
   });
 

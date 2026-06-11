@@ -500,7 +500,10 @@ export async function listProviderExercises(
           AND ea.status = 'active'
       ) expected
     ) comp ON true
-    WHERE e.provider_id = ${providerId}
+    WHERE (
+      e.provider_id = ${providerId}
+      OR (e.owner_type = 'platform' AND e.status = 'published')
+    )
       ${category ? sql`AND e.category = ${category}` : sql``}
     ORDER BY ${orderBy} ${orderDir} NULLS LAST, e.created_at DESC
     LIMIT ${limit}
@@ -524,8 +527,8 @@ export async function countProviderExercises(
 ) {
   type CountRow = { total: string };
   const conditions = category
-    ? sql`provider_id = ${providerId} AND category = ${category}`
-    : sql`provider_id = ${providerId}`;
+    ? sql`(provider_id = ${providerId} OR (owner_type = 'platform' AND status = 'published')) AND category = ${category}`
+    : sql`provider_id = ${providerId} OR (owner_type = 'platform' AND status = 'published')`;
   const result = await db.execute<CountRow>(sql`
     SELECT COUNT(*)::text AS total FROM exercises WHERE ${conditions}
   `);
@@ -537,7 +540,13 @@ export async function findExerciseById(db: DbClient, id: string, providerId: str
   const [row] = await db
     .select()
     .from(exercises)
-    .where(and(eq(exercises.id, id), eq(exercises.provider_id, providerId)))
+    .where(and(
+      eq(exercises.id, id),
+      or(
+        eq(exercises.provider_id, providerId),
+        and(eq(exercises.owner_type, 'platform'), eq(exercises.status, 'published')),
+      ),
+    ))
     .limit(1);
   return row ?? null;
 }
@@ -557,7 +566,7 @@ export async function insertExercise(
 ) {
   const [row] = await db
     .insert(exercises)
-    .values({ provider_id: providerId, ...data })
+    .values({ owner_type: 'provider', provider_id: providerId, status: 'published', ...data })
     .returning();
   return row;
 }

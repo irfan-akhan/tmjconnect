@@ -3,6 +3,17 @@ import { sql } from 'drizzle-orm';
 import { users } from './users';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────────
+export const exerciseOwnerTypeEnum = pgEnum('exercise_owner_type', [
+  'platform',
+  'provider',
+]);
+
+export const exerciseStatusEnum = pgEnum('exercise_status', [
+  'draft',
+  'published',
+  'archived',
+]);
+
 export const assignmentStatusEnum = pgEnum('assignment_status', [
   'active',
   'paused',
@@ -16,7 +27,9 @@ export const assignmentStatusEnum = pgEnum('assignment_status', [
 // @tmjconnect/shared (single code path for all free-text).
 export const exercises = pgTable('exercises', {
   id: uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
-  provider_id: uuid('provider_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  owner_type: exerciseOwnerTypeEnum('owner_type').notNull().default('provider'),
+  provider_id: uuid('provider_id').references(() => users.id, { onDelete: 'cascade' }),
+  status: exerciseStatusEnum('status').notNull().default('published'),
   title: varchar('title', { length: 255 }).notNull(),
   description: text('description'),
   duration_seconds: integer('duration_seconds'),

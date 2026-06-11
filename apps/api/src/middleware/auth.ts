@@ -69,6 +69,20 @@ export function authorize(role: Role) {
   };
 }
 
+export function authorizeAny(...roles: Role[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      next(new AppError(401, 'UNAUTHORIZED', 'Authentication required.'));
+      return;
+    }
+    if (!roles.includes(req.user.role)) {
+      next(new AppError(403, 'FORBIDDEN', 'Access denied for this role.'));
+      return;
+    }
+    next();
+  };
+}
+
 /**
  * checkSessionTimeout(db) — Enforces the 15-minute inactivity timeout for providers.
  * Must be called after authenticate() + authorize('provider').
