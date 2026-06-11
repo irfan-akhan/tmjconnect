@@ -32,10 +32,11 @@ export const reportInboxQuerySchema = commonListQuerySchema.extend({
 
 // ─── Patient's own reports query ───────────────────────────────────────────────────
 export const patientReportsListQuerySchema = commonListQuerySchema.extend({
+  status: z.enum(['submitted', 'viewed', 'reviewed', 'responded']).optional(),
   urgency: z.enum(['routine', 'concerning', 'urgent']).optional(),
   from: z.string().date().optional(),
   to: z.string().date().optional(),
-  sortBy: z.enum(['created_at', 'urgency']).optional(),
+  sortBy: z.enum(['created_at', 'urgency', 'status']).optional(),
 });
 
 // ─── Clinical notes (provider-only; about a patient, never patient-visible) ────────

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SUPPORTED_COUNTRIES } from '../constants';
 
 // ─── Password policy ────────────────────────────────────────────────────────────
 const passwordSchema = z
@@ -13,6 +14,8 @@ const phoneSchema = z
   .string()
   .regex(/^\+[1-9]\d{7,14}$/, 'Phone must be E.164 format, e.g. +15551234567');
 
+const countrySchema = z.enum(SUPPORTED_COUNTRIES);
+
 // ─── Register (separate schemas per role — no discriminated union needed) ─────
 export const registerPatientSchema = z.object({
   email: z.string().email().toLowerCase(),
@@ -20,6 +23,7 @@ export const registerPatientSchema = z.object({
   first_name: z.string().min(1).max(100),
   last_name: z.string().min(1).max(100),
   phone: phoneSchema,
+  country: countrySchema,
   timezone: z.string().optional(),
 });
 
@@ -29,6 +33,7 @@ export const registerProviderSchema = z.object({
   first_name: z.string().min(1).max(100),
   last_name: z.string().min(1).max(100),
   phone: phoneSchema,
+  country: countrySchema,
   date_of_birth: z.string().date('Date of birth must be YYYY-MM-DD format'),
   timezone: z.string().optional(),
   license_number: z.string().min(1).max(100),
@@ -86,6 +91,10 @@ export const mfaSmsSchema = z.object({
 // ─── Refresh ─────────────────────────────────────────────────────────────────────
 export const refreshSchema = z.object({
   refresh_token: z.string().min(1),
+});
+
+export const logoutAllSchema = z.object({
+  password: z.string().min(1, 'Password is required'),
 });
 
 // ─── Forgot Password ──────────────────────────────────────────────────────────────

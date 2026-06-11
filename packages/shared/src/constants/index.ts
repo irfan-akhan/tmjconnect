@@ -2,6 +2,16 @@
 export const ROLES = ['patient', 'provider', 'admin'] as const;
 export type Role = (typeof ROLES)[number];
 
+// ─── Supported Countries ─────────────────────────────────────────────────────
+export const SUPPORTED_COUNTRIES = ['US', 'CA', 'IN'] as const;
+export type SupportedCountry = (typeof SUPPORTED_COUNTRIES)[number];
+
+export const SUPPORTED_COUNTRY_LABELS: Record<SupportedCountry, string> = {
+  US: 'United States',
+  CA: 'Canada',
+  IN: 'India',
+};
+
 // ─── Report Urgency ─────────────────────────────────────────────────────────────
 export const URGENCY_LEVELS = ['routine', 'concerning', 'urgent'] as const;
 export type UrgencyLevel = (typeof URGENCY_LEVELS)[number];

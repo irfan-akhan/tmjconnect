@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SUPPORTED_COUNTRIES } from '../constants';
 import { freeText, optionalFreeText } from '../utils/zodHelpers';
 import { commonListQuerySchema } from './common.schemas';
 
@@ -10,6 +11,7 @@ export const updatePatientProfileSchema = z.object({
   gender: z.string().max(20).optional().nullable(),
   city: z.string().max(100).optional().nullable(),
   state: z.string().max(50).optional().nullable(),
+  country: z.enum(SUPPORTED_COUNTRIES).optional(),
   timezone: z.string().max(50).optional(),
   avatar_url: z.string().url().max(500).optional().nullable(),
 });

@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { commonListQuerySchema } from './common.schemas';
 
+const optionalQueryUuid = z.preprocess(
+  (value) => value === '' ? undefined : value,
+  z.string().uuid().optional(),
+);
+
 export const adminUserListQuerySchema = commonListQuerySchema.extend({
   sortBy: z.enum(['created_at', 'email', 'role', 'is_active']).optional(),
   search: z.string().max(255).optional(),
@@ -42,7 +47,7 @@ export const adminAccountRestoreReviewSchema = z.object({
 
 export const auditLogQuerySchema = commonListQuerySchema.extend({
   sortBy: z.enum(['created_at', 'action', 'resource_type']).optional(),
-  user_id: z.string().uuid().optional(),
+  user_id: optionalQueryUuid,
   action: z.string().max(100).optional(),
   resource_type: z.string().max(50).optional(),
   from: z.string().date().optional(),
@@ -61,7 +66,7 @@ export const auditLogExportQuerySchema = z.object({
 
 export const loginEventQuerySchema = commonListQuerySchema.extend({
   sortBy: z.enum(['created_at', 'email', 'success']).optional(),
-  user_id: z.string().uuid().optional(),
+  user_id: optionalQueryUuid,
   success: z.coerce.boolean().optional(),
   from: z.string().date().optional(),
   to: z.string().date().optional(),
