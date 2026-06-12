@@ -206,8 +206,8 @@ export async function createUserTransaction(db: DbClient, data: RegisterData): P
     if (data.role === 'provider') {
       await tx.insert(providerDetails).values({
         user_id: newUser.id,
-        license_number: data.license_number!,
-        license_type: data.license_type!,
+        license_number: data.license_number ?? null,
+        license_type: data.license_type ?? null,
         specialty: data.specialty!,
         clinic_name: data.clinic_name!,
         credentials: data.credentials ?? null,

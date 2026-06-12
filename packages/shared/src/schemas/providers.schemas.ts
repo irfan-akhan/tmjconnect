@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SUPPORTED_COUNTRIES } from '../constants';
 import { commonListQuerySchema } from './common.schemas';
 
 // ─── Update Profile ───────────────────────────────────────────────────────────────
@@ -7,9 +8,10 @@ export const updateProviderProfileSchema = z.object({
   last_name: z.string().min(1).max(100).optional(),
   city: z.string().max(100).optional().nullable(),
   state: z.string().max(50).optional().nullable(),
+  country: z.enum(SUPPORTED_COUNTRIES).optional(),
   timezone: z.string().max(50).optional(),
-  license_number: z.string().max(100).optional(),
-  license_type: z.string().max(100).optional(),
+  license_number: z.string().max(100).optional().nullable(),
+  license_type: z.string().max(100).optional().nullable(),
   specialty: z.string().max(100).optional(),
   clinic_name: z.string().max(200).optional(),
   credentials: z.array(z.string().max(100)).max(20).optional().nullable(),

@@ -222,7 +222,7 @@ components:
     PatientProfile:
       description: Patient user profile with demographic information
       type: object
-      required: [id, email, role, is_active, created_at, updated_at, first_name, last_name, timezone]
+      required: [id, email, role, is_active, created_at, updated_at, first_name, last_name, country, timezone]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
@@ -242,13 +242,14 @@ components:
         avatar_url: { type: [string, "null"], format: uri }
         city: { type: [string, "null"] }
         state: { type: [string, "null"] }
+        country: { type: string, enum: [US, CA, IN], description: "Supported country code. Product availability is limited to United States, Canada, and India." }
         timezone: { type: string, description: "IANA timezone (e.g. America/New_York)" }
         profile_updated_at: { type: [string, "null"], format: date-time }
 
     ProviderProfile:
       description: Provider user profile with professional details
       type: object
-      required: [id, email, role, is_active, email_verified, mfa_enabled, first_name, last_name, timezone, license_number, license_type, specialty, clinic_name]
+      required: [id, email, role, is_active, email_verified, mfa_enabled, first_name, last_name, country, timezone, specialty, clinic_name]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
@@ -267,9 +268,10 @@ components:
         avatar_url: { type: [string, "null"], format: uri }
         city: { type: [string, "null"] }
         state: { type: [string, "null"] }
+        country: { type: string, enum: [US, CA, IN], description: "Supported country code. Product availability is limited to United States, Canada, and India." }
         timezone: { type: string, description: "IANA timezone" }
-        license_number: { type: string }
-        license_type: { type: string }
+        license_number: { type: [string, "null"] }
+        license_type: { type: [string, "null"] }
         specialty: { type: string }
         clinic_name: { type: string }
         credentials:
@@ -411,6 +413,49 @@ components:
         video_url: { type: [string, "null"], format: uri, description: "Uploaded video URL" }
         thumbnail_url: { type: [string, "null"], format: uri, description: "Video thumbnail URL" }
         created_at: { type: string, format: date-time }
+
+    AdminExercise:
+      description: Exercise catalog row visible to admins. Includes platform-owned and provider-owned exercises plus provider metadata when applicable.
+      type: object
+      required: [id, owner_type, status, title, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        owner_type: { type: string, enum: [platform, provider] }
+        provider_id: { type: [string, "null"], format: uuid, description: "Provider owner when owner_type is provider; null for platform-owned exercises." }
+        status: { type: string, enum: [draft, published, archived] }
+        title: { type: string, maxLength: 255 }
+        description: { type: [string, "null"], maxLength: 5000 }
+        duration_seconds: { type: [integer, "null"], minimum: 1 }
+        category: { type: [string, "null"], maxLength: 100 }
+        instructions: { type: [string, "null"], maxLength: 10000 }
+        video_url: { type: [string, "null"], format: uri }
+        thumbnail_url: { type: [string, "null"], format: uri }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        provider_email: { type: [string, "null"], format: email }
+        provider_first_name: { type: [string, "null"] }
+        provider_last_name: { type: [string, "null"] }
+        provider_clinic_name: { type: [string, "null"] }
+        provider_specialty: { type: [string, "null"] }
+        provider_license_number: { type: [string, "null"] }
+        provider_license_type: { type: [string, "null"] }
+        provider_credentials:
+          type: [array, "null"]
+          items: { type: string }
+
+    AdminExerciseInput:
+      description: Fields admins can create or edit on an exercise. Create produces a platform-owned exercise; update can modify platform-owned or provider-owned exercises.
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: [string, "null"], maxLength: 5000 }
+        duration_seconds: { type: [integer, "null"], minimum: 1 }
+        category: { type: [string, "null"], maxLength: 100 }
+        instructions: { type: [string, "null"], maxLength: 10000 }
+        video_url: { type: [string, "null"], format: uri }
+        thumbnail_url: { type: [string, "null"], format: uri }
+        status: { type: string, enum: [draft, published, archived], default: draft }
 
     ExerciseAssignment:
       description: Exercise assigned to a patient by their provider
@@ -821,13 +866,21 @@ components:
                 updated_at: { type: [string, "null"], format: date-time }
                 deleted_at: { type: [string, "null"], format: date-time }
         recent_audit_logs:
-          type: array
-          items:
-            $ref: '#/components/schemas/AuditLog'
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditLog'
         recent_login_events:
-          type: array
-          items:
-            $ref: '#/components/schemas/LoginEvent'
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/LoginEvent'
 
     AuditLog:
       description: HIPAA audit trail entry (append-only, never deleted)
@@ -1719,6 +1772,17 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
+    AdminSupportTicket:
+      description: Admin view of a support ticket including submitter identity
+      allOf:
+        - $ref: '#/components/schemas/SupportTicket'
+        - type: object
+          required: [user_email]
+          properties:
+            user_email: { type: string, format: email }
+            first_name: { type: [string, "null"] }
+            last_name: { type: [string, "null"] }
+
     # ─── Provider Billing ──────────────────────────────────────────────────────
     ProviderBilling:
       description: Provider billing and plan tier information
@@ -1752,13 +1816,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, first_name, last_name, phone]
+              required: [email, password, first_name, last_name, phone, country]
               properties:
                 email: { type: string, format: email }
                 password: { type: string, minLength: 8, description: "Min 8 chars, 1 digit, 1 special char" }
                 first_name: { type: string }
                 last_name: { type: string }
                 phone: { type: string, pattern: '^\+[1-9]\d{7,14}$', description: "E.164 format (e.g. +15551234567). Required for SMS MFA." }
+                country: { type: string, enum: [US, CA, IN], description: "Supported country code: United States, Canada, or India." }
                 timezone: { type: string }
       responses:
         '201': { description: Account created. Check email for a 6-digit verification code that expires after 5 minutes. }
@@ -1852,16 +1917,17 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, first_name, last_name, phone, license_number, license_type, specialty, clinic_name]
+              required: [email, password, first_name, last_name, phone, country, specialty, clinic_name]
               properties:
                 email: { type: string, format: email }
                 password: { type: string, minLength: 8, description: "Min 8 chars, 1 digit, 1 special char" }
                 first_name: { type: string }
                 last_name: { type: string }
                 phone: { type: string, pattern: '^\+[1-9]\d{7,14}$', description: "E.164 format (e.g. +15551234567). Required for SMS MFA." }
+                country: { type: string, enum: [US, CA, IN], description: "Supported country code: United States, Canada, or India." }
                 timezone: { type: string }
-                license_number: { type: string }
-                license_type: { type: string }
+                license_number: { type: string, description: "Optional NPI/license identifier" }
+                license_type: { type: string, description: "Optional provider credential type" }
                 specialty: { type: string }
                 clinic_name: { type: string }
                 credentials: { type: array, items: { type: string }, description: "Professional titles (e.g. ['DDS', 'CCMC'])" }
@@ -2196,17 +2262,28 @@ paths:
   /auth/logout-all:
     delete:
       tags: [Auth]
-      summary: Logout from all devices
+      summary: Logout from all other devices
+      description: Requires the current account password, then revokes tokens and deletes active sessions for all other devices. The caller remains signed in on the current device.
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 1, description: "Current account password for confirmation." }
       responses:
         '200':
-          description: All sessions and tokens deleted
+          description: Other sessions and tokens revoked
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message: { type: string, example: "All sessions terminated." }
+                  message: { type: string, example: "Logged out from all other devices." }
+        '400': { description: Password is missing or incorrect }
 
   /auth/change-password:
     patch:
@@ -2284,6 +2361,7 @@ paths:
                 gender: { type: [string, "null"] }
                 city: { type: [string, "null"] }
                 state: { type: [string, "null"] }
+                country: { type: string, enum: [US, CA, IN] }
                 timezone: { type: string }
                 avatar_url: { type: [string, "null"], format: uri, maxLength: 500 }
       responses:
@@ -2654,6 +2732,29 @@ paths:
                   meta: { $ref: '#/components/schemas/ListMeta' }
         '401': { description: Unauthorized }
 
+  /exercises/assignments/{assignmentId}:
+    get:
+      tags: [Exercises]
+      summary: Get a single exercise assignment by id (patient)
+      description: Returns one assignment if it belongs to the authenticated patient.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Assignment detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ExerciseAssignment' }
+        '401': { description: Unauthorized }
+        '404': { description: Assignment not found }
+
   /exercises/assignments/{assignmentId}/complete:
     post:
       tags: [Exercises]
@@ -2878,8 +2979,9 @@ paths:
                 timezone: { type: string }
                 city: { type: [string, "null"] }
                 state: { type: [string, "null"] }
-                license_number: { type: string }
-                license_type: { type: string }
+                country: { type: string, enum: [US, CA, IN] }
+                license_number: { type: [string, "null"] }
+                license_type: { type: [string, "null"] }
                 specialty: { type: string }
                 clinic_name: { type: string }
                 credentials: { type: array, items: { type: string } }
@@ -4326,7 +4428,7 @@ paths:
     get:
       tags: [Reports]
       summary: Patient — list own submitted reports
-      description: Patient report list with offset pagination, date/urgency filters, and sorting.
+      description: Patient report list with offset pagination, date/status/urgency filters, and sorting.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/limitParam'
@@ -4335,17 +4437,21 @@ paths:
         - name: sortBy
           in: query
           description: Field to sort reports by.
-          schema: { type: string, enum: [created_at, urgency], default: created_at }
+          schema: { type: string, enum: [created_at, urgency, status], default: created_at }
           example: created_at
+        - name: status
+          in: query
+          description: Filter by report workflow status.
+          schema: { type: string, enum: [submitted, viewed, reviewed, responded] }
         - name: urgency
           in: query
           schema: { type: string, enum: [routine, concerning, urgent] }
         - name: from
           in: query
-          schema: { type: string, format: date-time }
+          schema: { type: string, format: date }
         - name: to
           in: query
-          schema: { type: string, format: date-time }
+          schema: { type: string, format: date }
       responses:
         '200':
           description: Patient's own reports
@@ -4952,6 +5058,166 @@ paths:
                   data: { $ref: '#/components/schemas/AccountRestoreRequest' }
         '404': { description: Pending restore request not found }
 
+  /admin/support-tickets:
+    get:
+      tags: [Admin]
+      summary: List support tickets across all users
+      description: Offset-paginated admin queue for support tickets with optional status/category/search filters.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+        - $ref: '#/components/parameters/sortOrderParam'
+        - $ref: '#/components/parameters/searchParam'
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [created_at, status, category, email], default: created_at }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, in_progress, resolved, closed] }
+        - name: category
+          in: query
+          schema: { type: string, enum: [technical, billing, clinical, feature, other] }
+      responses:
+        '200':
+          description: Support tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AdminSupportTicket' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+
+  /admin/support-tickets/{id}:
+    get:
+      tags: [Admin]
+      summary: Get support ticket detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Support ticket detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminSupportTicket' }
+        '404': { description: Support ticket not found }
+
+    patch:
+      tags: [Admin]
+      summary: Update support ticket status
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [open, in_progress, resolved, closed] }
+      responses:
+        '200':
+          description: Updated ticket
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SupportTicket' }
+        '404': { description: Support ticket not found }
+
+  /admin/exercises:
+    get:
+      tags: [Admin]
+      summary: List full exercise catalog
+      description: Returns all exercises in the system, including platform-created exercises and provider-created exercises, with provider metadata for provider-owned rows.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+        - name: page
+          in: query
+          description: Deprecated compatibility page number. If `offset` is omitted, the API derives offset from this page and `limit`.
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        '200':
+          description: Exercise catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AdminExercise' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+    post:
+      tags: [Admin]
+      summary: Create a platform exercise
+      description: Creates a platform-owned exercise in the shared catalog.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminExerciseInput'
+      responses:
+        '201':
+          description: Exercise created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminExercise' }
+
+  /admin/exercises/{id}:
+    patch:
+      tags: [Admin]
+      summary: Update any exercise in the catalog
+      description: Admins can edit platform-owned and provider-owned exercises.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, minLength: 1, maxLength: 255 }
+                description: { type: [string, "null"], maxLength: 5000 }
+                duration_seconds: { type: [integer, "null"], minimum: 1 }
+                category: { type: [string, "null"], maxLength: 100 }
+                instructions: { type: [string, "null"], maxLength: 10000 }
+                video_url: { type: [string, "null"], format: uri }
+                thumbnail_url: { type: [string, "null"], format: uri }
+                status: { type: string, enum: [draft, published, archived] }
+      responses:
+        '200':
+          description: Exercise updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AdminExercise' }
+        '404': { description: Exercise not found }
+
   /admin/audit-logs:
     get:
       tags: [Admin]
@@ -4961,7 +5227,7 @@ paths:
         - $ref: '#/components/parameters/limitParam'
         - $ref: '#/components/parameters/offsetParam'
         - $ref: '#/components/parameters/sortOrderParam'
-        - { name: user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: user_id, in: query, description: "Optional user UUID filter. Empty string is treated as omitted for browser query-string compatibility.", schema: { type: string, format: uuid } }
         - { name: action, in: query, schema: { type: string } }
         - { name: resource_type, in: query, schema: { type: string } }
         - { name: from, in: query, schema: { type: string, format: date-time } }
@@ -5006,7 +5272,7 @@ paths:
         - $ref: '#/components/parameters/offsetParam'
         - $ref: '#/components/parameters/sortOrderParam'
         - { name: sortBy, in: query, description: Field to sort login events by., schema: { type: string, enum: [created_at, email, success], default: created_at }, example: success }
-        - { name: user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: user_id, in: query, description: "Optional user UUID filter. Empty string is treated as omitted for browser query-string compatibility.", schema: { type: string, format: uuid } }
         - { name: success, in: query, schema: { type: boolean } }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }

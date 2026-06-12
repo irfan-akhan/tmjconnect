@@ -14,8 +14,8 @@ export type UpdateProfileInput = {
     country?: 'US' | 'CA' | 'IN';
     timezone?: string;
     avatar_url?: string | null;
-    license_number?: string;
-    license_type?: string;
+    license_number?: string | null;
+    license_type?: string | null;
     specialty?: string;
     clinic_name?: string;
     credentials?: string[] | null;

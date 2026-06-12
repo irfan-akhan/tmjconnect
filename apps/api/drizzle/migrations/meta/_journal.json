@@ -127,6 +127,20 @@
       "when": 1744329617000,
       "tag": "0018_profile_country",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1744329618000,
+      "tag": "0019_provider_license_number_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1744329619000,
+      "tag": "0020_provider_license_type_nullable",
+      "breakpoints": true
     }
   ]
 }

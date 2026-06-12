@@ -70,8 +70,8 @@ export const profiles = pgTable('profiles', {
 // Professional details for provider accounts only.
 export const providerDetails = pgTable('provider_details', {
   user_id: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
-  license_number: varchar('license_number', { length: 100 }).notNull(),
-  license_type: varchar('license_type', { length: 100 }).notNull(),
+  license_number: varchar('license_number', { length: 100 }),
+  license_type: varchar('license_type', { length: 100 }),
   specialty: varchar('specialty', { length: 100 }).notNull(),
   clinic_name: varchar('clinic_name', { length: 200 }).notNull(),
   // Professional titles/credentials (e.g. ['DDS', 'CCMC']). PostgreSQL TEXT[].

@@ -15,6 +15,10 @@ const phoneSchema = z
   .regex(/^\+[1-9]\d{7,14}$/, 'Phone must be E.164 format, e.g. +15551234567');
 
 const countrySchema = z.enum(SUPPORTED_COUNTRIES);
+const optionalCredentialIdSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().max(100).optional(),
+);
 
 // ─── Register (separate schemas per role — no discriminated union needed) ─────
 export const registerPatientSchema = z.object({
@@ -36,8 +40,8 @@ export const registerProviderSchema = z.object({
   country: countrySchema,
   date_of_birth: z.string().date('Date of birth must be YYYY-MM-DD format'),
   timezone: z.string().optional(),
-  license_number: z.string().min(1).max(100),
-  license_type: z.string().min(1).max(100),
+  license_number: optionalCredentialIdSchema,
+  license_type: optionalCredentialIdSchema,
   specialty: z.string().min(1).max(100),
   clinic_name: z.string().min(1).max(200),
   credentials: z.array(z.string().max(100)).max(20).optional(),
