@@ -6239,6 +6239,14 @@ paths:
           in: query
           description: Filter by ticket status
           schema: { type: string, enum: [open, in_progress, resolved, closed] }
+        - name: category
+          in: query
+          description: Filter by ticket category
+          schema: { type: string, enum: [technical, billing, clinical, feature, other] }
+        - name: search
+          in: query
+          description: Case-insensitive search over subject and body.
+          schema: { type: string, maxLength: 255 }
       responses:
         '200':
           description: Support tickets

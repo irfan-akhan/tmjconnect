@@ -1,7 +1,7 @@
 /**
  * support-tickets.queries.ts — DB I/O for provider-submitted support tickets.
  */
-import { asc, eq, desc, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import { supportTickets } from '../schema';
 
@@ -9,6 +9,12 @@ type DbClient = Db['db'];
 type SortOrder = 'asc' | 'desc';
 
 export type SupportTicket = typeof supportTickets.$inferSelect;
+
+export type UserSupportTicketListFilters = {
+  search?: string;
+  status?: 'open' | 'in_progress' | 'resolved' | 'closed';
+  category?: 'technical' | 'billing' | 'clinical' | 'feature' | 'other';
+};
 
 export type AdminSupportTicketListFilters = {
   search?: string;
@@ -67,13 +73,26 @@ export async function listSupportTicketsForUser(
   offset = 0,
   sortBy: 'created_at' | 'category' | 'status' = 'created_at',
   sortOrder: SortOrder = 'desc',
+  filters: UserSupportTicketListFilters = {},
 ): Promise<SupportTicket[]> {
   const column = sortBy === 'category' ? supportTickets.category : sortBy === 'status' ? supportTickets.status : supportTickets.created_at;
   const orderBy = sortOrder === 'asc' ? asc(column) : desc(column);
+  const conditions = [eq(supportTickets.user_id, userId)];
+  if (filters.status) conditions.push(eq(supportTickets.status, filters.status));
+  if (filters.category) conditions.push(eq(supportTickets.category, filters.category));
+  const trimmedSearch = filters.search?.trim();
+  if (trimmedSearch) {
+    const searchPattern = `%${trimmedSearch}%`;
+    conditions.push(or(
+      ilike(supportTickets.subject, searchPattern),
+      ilike(supportTickets.body, searchPattern),
+    )!);
+  }
+
   let query = db
     .select()
     .from(supportTickets)
-    .where(eq(supportTickets.user_id, userId))
+    .where(and(...conditions)!)
     .orderBy(orderBy, desc(supportTickets.created_at))
     .limit(limit);
   (query as any) = query.offset(offset);

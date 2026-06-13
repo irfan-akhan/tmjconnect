@@ -68,5 +68,8 @@ export const createSupportTicketSchema = z.object({
 
 export const supportTicketListQuerySchema = commonListQuerySchema.extend({
   sortBy: z.enum(['created_at', 'category', 'status']).optional(),
+  status: z.enum(['open', 'in_progress', 'resolved', 'closed']).optional(),
+  category: z.enum(['technical', 'billing', 'clinical', 'feature', 'other']).optional(),
+  search: z.string().max(255).optional(),
 });
 
