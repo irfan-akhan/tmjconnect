@@ -64,6 +64,7 @@ function plain(s: string): string {
 // ─── Branding ─────────────────────────────────────────────────────────────────────
 const BRAND_NAVY = '#1B2A4A';
 const BRAND_GOLD = '#D4AF37';
+const PRODUCT_WEBSITE_URL = 'https://www.tmj-connect.com';
 
 function baseTemplate(content: string): string {
   return `
@@ -73,30 +74,42 @@ function baseTemplate(content: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TMJConnect</title>
+  <style>
+    @media only screen and (max-width: 620px) {
+      .email-shell { padding: 24px 12px !important; }
+      .email-container { width: 100% !important; max-width: 100% !important; border-radius: 0 !important; }
+      .email-header { padding: 20px 20px !important; }
+      .email-body { padding: 24px 20px !important; }
+      .email-body table td { display: block !important; width: 100% !important; box-sizing: border-box !important; }
+      .email-footer { padding: 18px 20px !important; }
+      .email-button { display: block !important; text-align: center !important; padding: 14px 18px !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;width:100%;border-collapse:collapse;">
     <tr>
-      <td align="center" style="padding:40px 20px;">
-        <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;max-width:600px;">
+      <td class="email-shell" align="center" style="padding:40px 20px;">
+        <table class="email-container" role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;width:100%;max-width:600px;border-collapse:collapse;">
           <!-- Header -->
           <tr>
-            <td style="background:${BRAND_NAVY};padding:24px 32px;">
-              <h1 style="margin:0;color:#fff;font-size:24px;font-weight:bold;">TMJConnect</h1>
+            <td class="email-header" style="background:${BRAND_NAVY};padding:24px 32px;">
+              <h1 style="margin:0;color:#fff;font-size:24px;line-height:1.25;font-weight:bold;">TMJConnect</h1>
             </td>
           </tr>
           <!-- Body -->
           <tr>
-            <td style="padding:32px;">
+            <td class="email-body" style="padding:32px;">
               ${content}
             </td>
           </tr>
           <!-- Footer -->
           <tr>
-            <td style="background:#f5f5f5;padding:16px 32px;text-align:center;">
-              <p style="margin:0;color:#888;font-size:12px;">
+            <td class="email-footer" style="background:#f5f5f5;padding:16px 32px;text-align:center;">
+              <p style="margin:0;color:#888;font-size:12px;line-height:1.6;">
                 <em>Care Beyond the Chair</em><br>
-                This message was sent by TMJConnect.
+                This message was sent by TMJConnect.<br>
+                Visit <a href="${PRODUCT_WEBSITE_URL}" style="color:${BRAND_NAVY};text-decoration:underline;">www.tmj-connect.com</a>
               </p>
             </td>
           </tr>
@@ -109,7 +122,7 @@ function baseTemplate(content: string): string {
 }
 
 function ctaButton(href: string, text: string): string {
-  return `<a href="${href}" style="display:inline-block;background:${BRAND_GOLD};color:${BRAND_NAVY};font-weight:bold;padding:12px 24px;border-radius:4px;text-decoration:none;margin:16px 0;">${text}</a>`;
+  return `<a class="email-button" href="${href}" style="display:inline-block;background:${BRAND_GOLD};color:${BRAND_NAVY};font-weight:bold;padding:12px 24px;border-radius:4px;text-decoration:none;margin:16px 0;">${text}</a>`;
 }
 
 function secondaryNote(text: string): string {
