@@ -34,7 +34,21 @@ export function supportRouter(container: Container) {
   router.get('/tickets', validate(supportTicketListQuerySchema, 'query'), auditLog('support_tickets_viewed', 'support_ticket'), async (req, res, next) => {
     try {
       const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
-      const result = await ListTickets.execute(container, { userId: req.user!.id, limit, offset, sortBy: sortBy as ListTickets.ListTicketsInput['sortBy'], sortOrder });
+      const { search, status, category } = req.query as unknown as {
+        search?: string;
+        status?: 'open' | 'in_progress' | 'resolved' | 'closed';
+        category?: 'technical' | 'billing' | 'clinical' | 'feature' | 'other';
+      };
+      const result = await ListTickets.execute(container, {
+        userId: req.user!.id,
+        limit,
+        offset,
+        sortBy: sortBy as ListTickets.ListTicketsInput['sortBy'],
+        sortOrder,
+        search,
+        status,
+        category,
+      });
       res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
     } catch (err) { next(err); }
   });
