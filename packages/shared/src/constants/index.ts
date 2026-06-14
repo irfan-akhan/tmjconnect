@@ -57,6 +57,23 @@ export const NOTIFICATION_TYPES = [
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
+// ─── Patient Activity Actions ─────────────────────────────────────────────────
+export const PATIENT_ACTIVITY_ACTIONS = [
+  'auth.login.success',
+  'auth.login.failed',
+  'auth.logout',
+  'auth.password_reset',
+  'auth.change_password',
+  'auth.mfa_enabled',
+  'auth.mfa_disabled',
+  'auth.email_change_requested',
+  'auth.email_change_verified',
+  'session_revoked',
+  'linking_code_accepted',
+  'link_disconnected',
+] as const;
+export type PatientActivityAction = (typeof PATIENT_ACTIVITY_ACTIONS)[number];
+
 // ─── Reminder Days ───────────────────────────────────────────────────────────────
 export const REMINDER_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 export type ReminderDay = (typeof REMINDER_DAYS)[number];

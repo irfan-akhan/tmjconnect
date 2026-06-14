@@ -10,6 +10,7 @@
  */
 
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { PATIENT_ACTIVITY_ACTIONS } from '@tmjconnect/shared';
 import type { Container } from '../../config/container';
 import { auditLogs } from '../../db/schema';
 import { getActivityEventConfig } from '../../utils/activity-event-map';
@@ -23,21 +24,6 @@ type Deps = Pick<Container, 'db'>;
  * narrow on purpose: add to this list only when we're sure the action is
  * user-facing and non-PHI.
  */
-const PATIENT_VISIBLE_ACTIONS = [
-  'auth.login.success',
-  'auth.login.failed',
-  'auth.logout',
-  'auth.password_reset',
-  'auth.change_password',
-  'auth.mfa_enabled',
-  'auth.mfa_disabled',
-  'auth.email_change_requested',
-  'auth.email_change_verified',
-  'session_revoked',
-  'linking_code_accepted',
-  'link_disconnected',
-] as const;
-
 export type ListActivityInput = {
   userId: string;
   limit: number;
@@ -63,7 +49,7 @@ export async function execute(deps: Deps, input: ListActivityInput) {
     .where(
       and(
         eq(auditLogs.user_id, input.userId),
-        inArray(auditLogs.action, PATIENT_VISIBLE_ACTIONS as unknown as string[]),
+        inArray(auditLogs.action, PATIENT_ACTIVITY_ACTIONS as unknown as string[]),
       ),
     )
     .orderBy(orderBy, desc(auditLogs.created_at))
