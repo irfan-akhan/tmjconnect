@@ -36,11 +36,15 @@ export function signMfaToken(userId: string): string {
 
 /**
  * Signs a short-lived MFA setup token (10 minutes).
- * Issued after email verification for providers who have not yet set up TOTP.
+ * Issued after email verification, patient MFA init, or verified MFA reconfiguration init.
  */
-export function signMfaSetupToken(userId: string): string {
+export function signMfaSetupToken(
+  userId: string,
+  mode: 'enroll' | 'reconfigure' = 'enroll',
+  pendingSecret?: string,
+): string {
   return jwt.sign(
-    { id: userId, purpose: 'mfa_setup' },
+    { id: userId, purpose: 'mfa_setup', mode, pending_secret: pendingSecret },
     env.JWT_SECRET,
     { expiresIn: MFA_SETUP_TOKEN_TTL_SECONDS },
   );
@@ -95,6 +99,25 @@ export function verifyPurposeToken(
   ]);
   if (!decoded || decoded.purpose !== purpose) return null;
   return decoded.id;
+}
+
+export type MfaSetupTokenPayload = {
+  userId: string;
+  mode: 'enroll' | 'reconfigure';
+  pendingSecret?: string;
+};
+
+export function verifyMfaSetupToken(token: string): MfaSetupTokenPayload | null {
+  const decoded = tryVerify<{ id: string; purpose: string; mode?: string; pending_secret?: string }>(token, [
+    env.JWT_SECRET,
+    env.JWT_SECRET_PREVIOUS,
+  ]);
+  if (!decoded || decoded.purpose !== 'mfa_setup') return null;
+  return {
+    userId: decoded.id,
+    mode: decoded.mode === 'reconfigure' ? 'reconfigure' : 'enroll',
+    pendingSecret: decoded.pending_secret,
+  };
 }
 
 /** Returns when the refresh token should expire (7 days from now). */

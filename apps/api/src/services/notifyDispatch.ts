@@ -90,7 +90,11 @@ async function dispatchEmail(email: EmailService, row: OutboxDispatchInput): Pro
       await email.sendProviderMessage(to, firstName, body);
       return;
     case 'welcome':
-      await email.sendWelcome(to, firstName);
+      await email.sendWelcome(
+        to,
+        firstName,
+        data.recipientRole === 'provider' || data.recipientRole === 'admin' ? data.recipientRole : 'patient',
+      );
       return;
     case 'password_reset':
       await email.sendPasswordReset(to, String(data.resetUrl ?? '#'));
@@ -108,6 +112,7 @@ async function dispatchEmail(email: EmailService, row: OutboxDispatchInput): Pro
         String(data.exerciseTitle ?? row.payload.body ?? 'New exercise'),
         String(data.frequency ?? ''),
         Number(data.sets ?? 0),
+        typeof data.assignmentId === 'string' ? data.assignmentId : undefined,
       );
       return;
     case 'link_accepted':

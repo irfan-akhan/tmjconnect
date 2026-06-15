@@ -92,7 +92,7 @@ export async function findUserForMfaVerify(db: DbClient, id: string) {
 
 export async function findUserForMfaSetup(db: DbClient, id: string) {
   const [row] = await db
-    .select({ id: users.id, email: users.email, mfa_enabled: users.mfa_enabled, mfa_secret: users.mfa_secret })
+    .select({ id: users.id, email: users.email, role: users.role, mfa_enabled: users.mfa_enabled, mfa_secret: users.mfa_secret })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);
@@ -282,6 +282,26 @@ export async function storeMfaSecret(db: DbClient, userId: string, encryptedSecr
 export async function enableMfaTransaction(db: DbClient, userId: string, hashedCodes: string[]) {
   await db.transaction(async (tx) => {
     await tx.update(users).set({ mfa_enabled: true }).where(eq(users.id, userId));
+    await tx.delete(mfaBackupCodes).where(eq(mfaBackupCodes.user_id, userId));
+    await tx.insert(mfaBackupCodes).values(
+      hashedCodes.map((hash) => ({ user_id: userId, code_hash: hash })),
+    );
+  });
+}
+
+export async function replaceMfaTransaction(db: DbClient, userId: string, encryptedSecret: string, hashedCodes: string[]) {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({
+        mfa_enabled: true,
+        mfa_secret: encryptedSecret,
+        sms_mfa_code_hash: null,
+        sms_mfa_expires_at: null,
+        updated_at: sql`NOW()`,
+      })
+      .where(eq(users.id, userId));
+    await tx.delete(mfaBackupCodes).where(eq(mfaBackupCodes.user_id, userId));
     await tx.insert(mfaBackupCodes).values(
       hashedCodes.map((hash) => ({ user_id: userId, code_hash: hash })),
     );

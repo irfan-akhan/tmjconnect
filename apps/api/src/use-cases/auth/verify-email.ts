@@ -77,7 +77,7 @@ export async function execute(deps: Deps, input: VerifyEmailInput): Promise<Veri
   if (!fullUser) throw new AppError(500, 'INTERNAL', 'User not found after verification.');
 
   const firstName = await getProfileFirstName(db, user.id);
-  email.sendWelcome(input.email, firstName ?? 'there')
+  email.sendWelcome(input.email, firstName ?? 'there', user.role)
     .catch((err) => logger.error({ err }, 'Failed to send welcome email'));
 
   if (user.role === 'patient') {

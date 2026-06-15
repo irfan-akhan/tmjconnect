@@ -87,6 +87,12 @@ export const mfaVerifySchema = z.object({
   type: z.enum(['totp', 'sms', 'backup']).default('totp'),
 });
 
+export const mfaReconfigureInitSchema = z.object({
+  password: z.string().min(1, 'Password is required'),
+  code: z.string().min(6).max(10), // TOTP (6) or backup code (10)
+  type: z.enum(['totp', 'backup']).default('totp'),
+});
+
 // ─── MFA SMS ─────────────────────────────────────────────────────────────────────
 export const mfaSmsSchema = z.object({
   mfa_token: z.string().min(1),

@@ -4,7 +4,7 @@ import { createCircuitBreaker } from './circuitBreaker';
 
 export interface EmailService {
   sendVerifyEmail(to: string, code: string): Promise<void>;
-  sendWelcome(to: string, firstName: string): Promise<void>;
+  sendWelcome(to: string, firstName: string, recipientRole?: 'patient' | 'provider' | 'admin'): Promise<void>;
   sendPasswordReset(to: string, resetUrl: string): Promise<void>;
   sendPasswordResetCode(to: string, code: string): Promise<void>;
   sendNewDeviceLogin(to: string, firstName: string, ip: string, device: string): Promise<void>;
@@ -16,8 +16,8 @@ export interface EmailService {
   sendSessionsRevoked(to: string, firstName: string): Promise<void>;
   sendProviderMessage(to: string, patientName: string, message: string): Promise<void>;
   sendLinkAccepted(to: string, providerName: string, patientName: string, recipientRole?: 'provider' | 'patient'): Promise<void>;
-  sendLinkDisconnected(to: string, firstName: string, otherPartyName: string): Promise<void>;
-  sendExerciseAssigned(to: string, patientName: string, exerciseTitle: string, frequency: string, sets: number): Promise<void>;
+  sendLinkDisconnected(to: string, firstName: string, otherPartyName: string, recipientRole?: 'patient' | 'provider'): Promise<void>;
+  sendExerciseAssigned(to: string, patientName: string, exerciseTitle: string, frequency: string, sets: number, assignmentId?: string): Promise<void>;
   sendReportSubmitted(to: string, providerName: string, patientName: string, urgency: string): Promise<void>;
   sendReportRequested(to: string, patientName: string, prompt: string): Promise<void>;
   sendReportReviewed(to: string, patientName: string): Promise<void>;
@@ -27,7 +27,7 @@ export interface EmailService {
   sendSupportTicketReceived(to: string, firstName: string, ticketId: string, subject: string): Promise<void>;
   sendDataExported(to: string, firstName: string): Promise<void>;
   sendAccountDeleted(to: string, firstName: string): Promise<void>;
-  sendAccountRestoreApproved(to: string, firstName: string): Promise<void>;
+  sendAccountRestoreApproved(to: string, firstName: string, recipientRole?: 'patient' | 'provider' | 'admin'): Promise<void>;
   sendBroadcast(to: string, title: string, body: string, type: 'announcement' | 'system'): Promise<void>;
 }
 
@@ -125,6 +125,17 @@ function ctaButton(href: string, text: string): string {
   return `<a class="email-button" href="${href}" style="display:inline-block;background:${BRAND_GOLD};color:${BRAND_NAVY};font-weight:bold;padding:12px 24px;border-radius:4px;text-decoration:none;margin:16px 0;">${text}</a>`;
 }
 
+function mobileLink(path = ''): string {
+  const cleanPath = path.replace(/^\/+/, '');
+  return cleanPath ? `tmjconnect://${cleanPath}` : 'tmjconnect://';
+}
+
+function webLink(baseUrl: string, path = ''): string {
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const cleanPath = path.replace(/^\/+/, '');
+  return cleanPath ? `${cleanBase}/${cleanPath}` : cleanBase;
+}
+
 function secondaryNote(text: string): string {
   return `<p style="color:#666;font-size:13px;line-height:1.5;">${text}</p>`;
 }
@@ -173,14 +184,15 @@ function templates(appUrl: string) {
       `),
     }),
 
-    welcome: (firstName: string) => {
+    welcome: (firstName: string, recipientRole: 'patient' | 'provider' | 'admin' = 'patient') => {
       const name = escHtml(firstName);
+      const destination = recipientRole === 'patient' ? mobileLink() : webLink(appUrl, 'login');
       return {
         subject: 'Welcome to TMJConnect',
         html: baseTemplate(`
           <h2 style="color:${BRAND_NAVY};">Welcome, ${name}!</h2>
           <p style="line-height:1.6;color:#333;">Your account is ready. TMJConnect helps you track symptoms, complete assigned exercises, and stay connected with your care team between visits.</p>
-          ${ctaButton(`${appUrl}/login`, 'Open TMJConnect')}
+          ${ctaButton(destination, 'Open TMJConnect')}
         `),
       };
     },
@@ -221,7 +233,7 @@ function templates(appUrl: string) {
             <tr><td><strong>Device:</strong></td><td>${safeDevice}</td></tr>
           </table>
           <p style="line-height:1.6;color:#333;">If this was you, no action is needed. If you do not recognize this sign-in, review your account security and update your password.</p>
-          ${ctaButton(`${appUrl}/settings/security`, 'Review Account Security')}
+          ${ctaButton(mobileLink('profile'), 'Review Account Security')}
         `),
       };
     },
@@ -234,7 +246,7 @@ function templates(appUrl: string) {
           <h2 style="color:${BRAND_NAVY};">Account temporarily locked</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, we temporarily locked your account after several unsuccessful sign-in attempts.</p>
           <p style="line-height:1.6;color:#333;">Your account will unlock automatically in 30 minutes. If you were trying to sign in and forgot your password, you can reset it now.</p>
-          ${ctaButton(`${appUrl}/forgot-password`, 'Reset Password')}
+          ${ctaButton(mobileLink('forgot-password'), 'Reset Password')}
         `),
       };
     },
@@ -247,7 +259,7 @@ function templates(appUrl: string) {
           <h2 style="color:${BRAND_NAVY};">Password changed</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, the password for your TMJConnect account was changed successfully.</p>
           ${secondaryNote('If you made this change, no action is needed. If you did not make this change, reset your password immediately and contact support.')}
-          ${ctaButton(`${appUrl}/forgot-password`, 'Reset Password')}
+          ${ctaButton(mobileLink('forgot-password'), 'Reset Password')}
         `),
       };
     },
@@ -261,7 +273,7 @@ function templates(appUrl: string) {
           <h2 style="color:${BRAND_NAVY};">Email address changed</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, the sign-in email for your TMJConnect account was changed to <strong>${safeEmail}</strong>.</p>
           ${secondaryNote('If you made this change, no action is needed. If you did not make this change, reset your password and contact support.')}
-          ${ctaButton(`${appUrl}/forgot-password`, 'Secure My Account')}
+          ${ctaButton(mobileLink('forgot-password'), 'Secure My Account')}
         `),
       };
     },
@@ -286,7 +298,7 @@ function templates(appUrl: string) {
           <h2 style="color:${BRAND_NAVY};">MFA disabled</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, multi-factor authentication was disabled for your TMJConnect account.</p>
           ${secondaryNote('If you did not disable MFA, reset your password immediately and contact support.')}
-          ${ctaButton(`${appUrl}/settings/security`, 'Review Security Settings')}
+          ${ctaButton(mobileLink('profile/mfa'), 'Review Security Settings')}
         `),
       };
     },
@@ -299,7 +311,7 @@ function templates(appUrl: string) {
           <h2 style="color:${BRAND_NAVY};">Sessions updated</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, one or more signed-in sessions were removed from your TMJConnect account.</p>
           ${secondaryNote('If this was you, no action is needed. If you do not recognize this change, review your account security.')}
-          ${ctaButton(`${appUrl}/settings/security`, 'Review Account Security')}
+          ${ctaButton(mobileLink('profile/sessions'), 'Review Account Security')}
         `),
       };
     },
@@ -315,7 +327,7 @@ function templates(appUrl: string) {
           <div style="line-height:1.6;color:#333;background:#f5f5f5;border-left:4px solid ${BRAND_GOLD};padding:16px;margin:16px 0;">
             ${safeMessage}
           </div>
-          ${ctaButton(appUrl, 'Open TMJConnect')}
+          ${ctaButton(mobileLink('notifications'), 'Open TMJConnect')}
           ${secondaryNote('For urgent symptoms or emergencies, contact your provider directly or seek immediate medical care.')}
         `),
       };
@@ -330,7 +342,7 @@ function templates(appUrl: string) {
           html: baseTemplate(`
             <h2 style="color:${BRAND_NAVY};">Provider connected</h2>
             <p style="line-height:1.6;color:#333;">Hi ${patient || 'there'}, you are now connected with <strong>${provider || 'your provider'}</strong> in TMJConnect.</p>
-            ${ctaButton(appUrl, 'Open TMJConnect')}
+            ${ctaButton(mobileLink('profile/linked-providers'), 'Open TMJConnect')}
           `),
         };
       }
@@ -339,29 +351,31 @@ function templates(appUrl: string) {
         html: baseTemplate(`
           <h2 style="color:${BRAND_NAVY};">Patient connected</h2>
           <p style="line-height:1.6;color:#333;">Hi ${provider || 'there'}, <strong>${patient || 'your patient'}</strong> accepted your invitation and is now connected to your TMJConnect portal.</p>
-          ${ctaButton(`${appUrl}/portal/patients`, 'View Patient')}
+          ${ctaButton(webLink(appUrl, 'patients'), 'View Patient')}
         `),
       };
     },
 
-    linkDisconnected: (firstName: string, otherPartyName: string) => {
+    linkDisconnected: (firstName: string, otherPartyName: string, recipientRole: 'patient' | 'provider' = 'patient') => {
       const name = escHtml(firstName || 'there');
       const otherParty = escHtml(otherPartyName || 'your connected care contact');
+      const destination = recipientRole === 'provider' ? webLink(appUrl, 'patients') : mobileLink('profile/linked-providers');
       return {
         subject: 'A TMJConnect care connection was removed',
         html: baseTemplate(`
           <h2 style="color:${BRAND_NAVY};">Care connection removed</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, your TMJConnect connection with <strong>${otherParty}</strong> has been removed.</p>
           ${secondaryNote('They will no longer have access through TMJConnect to newly shared care updates from this connection.')}
-          ${ctaButton(appUrl, 'Open TMJConnect')}
+          ${ctaButton(destination, 'Open TMJConnect')}
         `),
       };
     },
 
-    exerciseAssigned: (patientName: string, exerciseTitle: string, frequency: string, sets: number) => {
+    exerciseAssigned: (patientName: string, exerciseTitle: string, frequency: string, sets: number, assignmentId?: string) => {
       const patient = escHtml(patientName || 'there');
       const title = escHtml(exerciseTitle || 'a new exercise');
       const safeFrequency = escHtml(frequency || 'as assigned');
+      const exerciseUrl = assignmentId ? mobileLink(`exercise/${encodeURIComponent(assignmentId)}`) : mobileLink('exercises');
       return {
         subject: cleanSubject(`New exercise assigned: ${exerciseTitle || 'TMJConnect exercise'}`),
         html: baseTemplate(`
@@ -371,7 +385,7 @@ function templates(appUrl: string) {
             <tr><td><strong>Frequency:</strong></td><td>${safeFrequency}</td></tr>
             <tr><td><strong>Sets:</strong></td><td>${sets}</td></tr>
           </table>
-          ${ctaButton(`${appUrl}/exercises`, 'View Exercise')}
+          ${ctaButton(exerciseUrl, 'View Exercise')}
           ${secondaryNote("Follow your provider's instructions and stop if an exercise causes unexpected pain or symptoms.")}
         `),
       };
@@ -390,7 +404,7 @@ function templates(appUrl: string) {
           </h2>
           <p style="line-height:1.6;color:#333;">Hi ${provider || 'there'}, <strong>${patient || 'your patient'}</strong> submitted a ${safeUrgency || 'new'} TMJConnect report for your review.</p>
           ${urgency === 'urgent' ? '<p style="line-height:1.6;color:#c0392b;font-weight:bold;">This report was marked urgent. Please review it as soon as your workflow allows.</p>' : ''}
-          ${ctaButton(`${appUrl}/portal/reports`, 'View Report')}
+          ${ctaButton(webLink(appUrl, 'reports'), 'View Report')}
         `),
       };
     },
@@ -406,7 +420,7 @@ function templates(appUrl: string) {
           <div style="line-height:1.6;color:#333;background:#f5f5f5;border-left:4px solid ${BRAND_GOLD};padding:16px;margin:16px 0;">
             ${safePrompt}
           </div>
-          ${ctaButton(`${appUrl}/reports/new`, 'Complete Report')}
+          ${ctaButton(mobileLink('report-submit'), 'Complete Report')}
           ${secondaryNote('If you have urgent symptoms or need immediate care, contact your provider directly.')}
         `),
       };
@@ -419,7 +433,7 @@ function templates(appUrl: string) {
         html: baseTemplate(`
           <h2 style="color:${BRAND_NAVY};">Report reviewed</h2>
           <p style="line-height:1.6;color:#333;">Hi ${patient || 'there'}, your provider reviewed your recent TMJConnect report. Open the app to see any notes or next steps.</p>
-          ${ctaButton(`${appUrl}/reports`, 'View Report')}
+          ${ctaButton(mobileLink('reports'), 'View Report')}
         `),
       };
     },
@@ -451,7 +465,7 @@ function templates(appUrl: string) {
               </td>
             </tr>
           </table>
-          ${ctaButton(appUrl, 'Open TMJConnect')}
+          ${ctaButton(mobileLink(), 'Open TMJConnect')}
         `),
       };
     },
@@ -498,7 +512,7 @@ function templates(appUrl: string) {
           <h2 style="color:${BRAND_NAVY};">Data export generated</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, your TMJConnect data export was generated from your account.</p>
           ${secondaryNote('If you requested this export, no action is needed. If you did not request it, review your account security and contact support.')}
-          ${ctaButton(`${appUrl}/settings/security`, 'Review Account Security')}
+          ${ctaButton(mobileLink('profile'), 'Review Account Security')}
         `),
       };
     },
@@ -515,15 +529,16 @@ function templates(appUrl: string) {
       };
     },
 
-    accountRestoreApproved: (firstName: string) => {
+    accountRestoreApproved: (firstName: string, recipientRole?: 'patient' | 'provider' | 'admin') => {
       const name = escHtml(firstName || 'there');
+      const destination = recipientRole === 'patient' ? mobileLink('sign-in') : webLink(appUrl, 'login');
       return {
         subject: 'Your TMJConnect account has been restored',
         html: baseTemplate(`
           <h2 style="color:${BRAND_NAVY};">Account restored</h2>
           <p style="line-height:1.6;color:#333;">Hi ${name}, your TMJConnect account restoration request was approved.</p>
           ${secondaryNote('You can now sign in again with your existing email and password.')}
-          ${ctaButton(appUrl, 'Sign in to TMJConnect')}
+          ${ctaButton(destination, 'Sign in to TMJConnect')}
         `),
       };
     },
@@ -537,7 +552,7 @@ function templates(appUrl: string) {
         html: baseTemplate(`
           <h2 style="color:${headingColor};">${safeTitle}</h2>
           <p style="line-height:1.6;color:#333;">${safeBody}</p>
-          ${ctaButton(appUrl, 'Open TMJConnect')}
+          ${ctaButton(mobileLink(), 'Open TMJConnect')}
         `),
       };
     },
@@ -613,8 +628,8 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
       }
       await send(to, subject, html);
     },
-    async sendWelcome(to, firstName) {
-      const { subject, html } = tmpl.welcome(firstName);
+    async sendWelcome(to, firstName, recipientRole) {
+      const { subject, html } = tmpl.welcome(firstName, recipientRole);
       await send(to, subject, html);
     },
     async sendPasswordReset(to, resetUrl) {
@@ -664,12 +679,12 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
       const { subject, html } = tmpl.linkAccepted(providerName, patientName, recipientRole);
       await send(to, subject, html);
     },
-    async sendLinkDisconnected(to, firstName, otherPartyName) {
-      const { subject, html } = tmpl.linkDisconnected(firstName, otherPartyName);
+    async sendLinkDisconnected(to, firstName, otherPartyName, recipientRole) {
+      const { subject, html } = tmpl.linkDisconnected(firstName, otherPartyName, recipientRole);
       await send(to, subject, html);
     },
-    async sendExerciseAssigned(to, patientName, exerciseTitle, frequency, sets) {
-      const { subject, html } = tmpl.exerciseAssigned(patientName, exerciseTitle, frequency, sets);
+    async sendExerciseAssigned(to, patientName, exerciseTitle, frequency, sets, assignmentId) {
+      const { subject, html } = tmpl.exerciseAssigned(patientName, exerciseTitle, frequency, sets, assignmentId);
       await send(to, subject, html);
     },
     async sendReportSubmitted(to, providerName, patientName, urgency) {
@@ -708,8 +723,8 @@ export function createEmailService(env: Env, logger: Logger): EmailService {
       const { subject, html } = tmpl.accountDeleted(firstName);
       await send(to, subject, html);
     },
-    async sendAccountRestoreApproved(to, firstName) {
-      const { subject, html } = tmpl.accountRestoreApproved(firstName);
+    async sendAccountRestoreApproved(to, firstName, recipientRole) {
+      const { subject, html } = tmpl.accountRestoreApproved(firstName, recipientRole);
       await send(to, subject, html);
     },
     async sendBroadcast(to, title, body, type) {

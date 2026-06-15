@@ -185,7 +185,7 @@ components:
           description: Temporary token for MFA setup (10min TTL). Pass to /auth/mfa/setup.
 
     MfaSetupResult:
-      description: Returned after successful MFA setup
+      description: Returned after successful MFA setup or reconfiguration
       type: object
       required: [message, backup_codes, access_token, refresh_token]
       properties:
@@ -201,7 +201,7 @@ components:
           maxItems: 10
         access_token:
           type: string
-          description: JWT access token (provider is logged in immediately)
+          description: JWT access token (user is logged in immediately)
         refresh_token:
           type: string
           description: Refresh token
@@ -217,6 +217,12 @@ components:
         qr_uri:
           type: string
           description: otpauth:// URI for QR code scanning
+        otpauth_url:
+          type: string
+          description: Alias of qr_uri for mobile clients
+        setup_token:
+          type: string
+          description: Present during MFA reconfiguration. Use this returned token for /auth/mfa/verify-setup so the pending new secret can be verified without replacing the current MFA first.
 
     # ─── Users & Profiles ──────────────────────────────────────────────────────
     PatientProfile:
@@ -1869,6 +1875,8 @@ paths:
         Returns a setup_token. Use it with the existing MFA endpoints:
         1. POST /auth/mfa/setup (Bearer: setup_token) → QR code + secret
         2. POST /auth/mfa/verify-setup (Bearer: setup_token + TOTP code) → backup codes + tokens
+
+        If MFA is already enabled, use POST /auth/mfa/reconfigure/init instead.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -1964,15 +1972,24 @@ paths:
         '403': { description: "WRONG_PORTAL (patient trying provider login), MFA_NOT_SETUP, VERIFY_EMAIL, ACCOUNT_INACTIVE, or ACCOUNT_DELETED. ACCOUNT_DELETED means the 24-hour self-restore window has passed and the user can submit /auth/account-restore/request." }
         '429': { description: Account locked after 5 failed attempts }
 
-  # ──────────────────────────── AUTH — MFA (PROVIDER ONLY) ──────────────────────
+  # ──────────────────────────── AUTH — MFA SETUP / RECONFIGURE ─────────────────
   /auth/mfa/setup:
     post:
       tags: [Auth]
-      summary: Begin MFA setup (provider onboarding, after verify-email)
+      summary: Begin MFA setup or reconfiguration
       description: |
-        Called once during provider onboarding. Requires the setup_token
-        returned by /auth/verify-email in the Authorization header.
-        Returns the TOTP secret and QR URI for authenticator app setup.
+        Begins authenticator-app enrollment for provider onboarding, patient opt-in,
+        or patient/provider MFA reconfiguration.
+
+        Requires a setup_token in the Authorization header. The token is returned by:
+        - POST /auth/verify-email for provider onboarding
+        - POST /auth/patient/mfa/init for patient opt-in
+        - POST /auth/mfa/reconfigure/init for patient/provider reconfiguration
+
+        Enrollment mode stores the new secret immediately and completes on
+        /auth/mfa/verify-setup. Reconfiguration mode keeps the current MFA active
+        and returns a new setup_token containing the pending secret; clients must
+        use that returned setup_token for /auth/mfa/verify-setup.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -1980,18 +1997,21 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/MfaSetupInit' }
+                $ref: '#/components/schemas/MfaSetupInit'
         '401': { description: Invalid or expired setup token }
+        '409': { description: MFA is already enabled for enrollment, or MFA is not enabled for reconfiguration }
 
   /auth/mfa/verify-setup:
     post:
       tags: [Auth]
-      summary: Complete MFA setup with first TOTP code (issues tokens)
+      summary: Complete MFA setup or reconfiguration with first TOTP code
       description: |
-        Verifies the provider's first TOTP code, enables MFA, generates 10 backup codes,
-        and issues access_token + refresh_token so the provider is logged in immediately.
+        Verifies the first TOTP code from the newly configured authenticator app,
+        enables or replaces MFA, generates 10 new backup codes, and issues
+        access_token + refresh_token so the user stays logged in.
+
+        For reconfiguration, use the setup_token returned by /auth/mfa/setup,
+        not the original token returned by /auth/mfa/reconfigure/init.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -2004,16 +2024,62 @@ paths:
                 code: { type: string, minLength: 6, maxLength: 6, description: "6-digit TOTP code from authenticator app" }
       responses:
         '200':
-          description: MFA enabled. Returns backup codes + tokens.
+          description: MFA enabled or reconfigured. Returns backup codes + tokens.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaSetupResult'
+
+  /auth/mfa/reconfigure/init:
+    post:
+      tags: [Auth]
+      summary: Initiate MFA reconfiguration for patient or provider
+      description: |
+        Starts a secure MFA reconfiguration flow for accounts that already have
+        MFA enabled. Requires the caller's current access token, current password,
+        and a current MFA factor (TOTP or backup code).
+
+        This endpoint does not replace the existing MFA secret. It only returns
+        a setup_token for /auth/mfa/setup. The existing MFA remains active until
+        /auth/mfa/verify-setup successfully verifies the new authenticator code.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, code]
+              properties:
+                password:
+                  type: string
+                  description: Current account password
+                code:
+                  type: string
+                  minLength: 6
+                  maxLength: 10
+                  description: Current authenticator TOTP code or unused backup code
+                type:
+                  type: string
+                  enum: [totp, backup]
+                  default: totp
+                  description: Current MFA factor type used to authorize reconfiguration
+      responses:
+        '200':
+          description: Setup token for MFA reconfiguration
           content:
             application/json:
               schema:
                 type: object
+                required: [setup_token]
                 properties:
-                  message: { type: string }
-                  backup_codes: { type: array, items: { type: string }, description: "10 one-time backup codes. Will not be shown again." }
-                  access_token: { type: string, description: "JWT access token (15min)" }
-                  refresh_token: { type: string, description: "Refresh token (7 days)" }
+                  setup_token:
+                    type: string
+                    description: Temporary token for /auth/mfa/setup
+        '400': { description: Invalid MFA code or invalid backup code }
+        '401': { description: Missing or invalid access token, or incorrect password }
+        '403': { description: MFA reconfiguration is not available for this account role }
+        '409': { description: MFA is not enabled }
 
   /auth/mfa/verify:
     post:
