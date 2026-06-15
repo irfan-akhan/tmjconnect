@@ -7,6 +7,7 @@ import {
   accountRestoreRequestSchema,
   mfaVerifySchema,
   mfaVerifySetupSchema,
+  mfaReconfigureInitSchema,
   mfaSmsSchema,
   refreshSchema,
   forgotPasswordSchema,
@@ -47,6 +48,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type AccountRestoreRequestInput = z.infer<typeof accountRestoreRequestSchema>;
 export type MfaVerifyInput = z.infer<typeof mfaVerifySchema>;
 export type MfaVerifySetupInput = z.infer<typeof mfaVerifySetupSchema>;
+export type MfaReconfigureInitInput = z.infer<typeof mfaReconfigureInitSchema>;
 export type MfaSmsInput = z.infer<typeof mfaSmsSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;

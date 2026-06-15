@@ -11,6 +11,7 @@ import {
   loginSchema,
   mfaVerifySetupSchema,
   mfaVerifySchema,
+  mfaReconfigureInitSchema,
   mfaSmsSchema,
   refreshSchema,
   logoutAllSchema,
@@ -33,6 +34,7 @@ import * as PatientDisableMfa from '../use-cases/auth/patient-disable-mfa';
 import * as VerifyEmail from '../use-cases/auth/verify-email';
 import * as SetupMfa from '../use-cases/auth/setup-mfa';
 import * as VerifyMfaSetup from '../use-cases/auth/verify-mfa-setup';
+import * as InitMfaReconfigure from '../use-cases/auth/init-mfa-reconfigure';
 import * as Login from '../use-cases/auth/login';
 import * as VerifyMfa from '../use-cases/auth/verify-mfa';
 import * as SendSmsMfa from '../use-cases/auth/send-sms-mfa';
@@ -201,6 +203,27 @@ export function authRouter(container: Container) {
           access_token: result.access_token,
           refresh_token: result.refresh_token,
         });
+      } catch (err) { next(err); }
+    },
+  );
+
+  router.post(
+    '/mfa/reconfigure/init',
+    authenticate,
+    validate(mfaReconfigureInitSchema),
+    auditLog('auth.mfa_reconfigure_started', 'user'),
+    async (req, res, next) => {
+      try {
+        if (req.user!.role !== 'patient' && req.user!.role !== 'provider') {
+          res.status(403).json({ error: { code: 'FORBIDDEN', message: 'MFA reconfiguration is not available for this account.' } });
+          return;
+        }
+        res.json(await InitMfaReconfigure.execute(container, {
+          userId: req.user!.id,
+          password: req.body.password,
+          code: req.body.code,
+          type: req.body.type,
+        }));
       } catch (err) { next(err); }
     },
   );

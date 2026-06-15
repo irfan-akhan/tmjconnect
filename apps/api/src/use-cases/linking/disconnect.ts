@@ -15,8 +15,8 @@ export async function execute(deps: Deps, input: DisconnectInput) {
   const patientName = `${participants.patient_first_name ?? ''} ${participants.patient_last_name ?? ''}`.trim() || 'your patient';
   const providerName = `${participants.provider_first_name ?? ''} ${participants.provider_last_name ?? ''}`.trim() || 'your provider';
 
-  deps.email.sendLinkDisconnected(participants.patient_email, participants.patient_first_name ?? '', providerName)
+  deps.email.sendLinkDisconnected(participants.patient_email, participants.patient_first_name ?? '', providerName, 'patient')
     .catch((err) => deps.logger.warn({ err, linkId: input.linkId, userId: participants.patient_id }, 'Patient disconnect email failed'));
-  deps.email.sendLinkDisconnected(participants.provider_email, participants.provider_first_name ?? '', patientName)
+  deps.email.sendLinkDisconnected(participants.provider_email, participants.provider_first_name ?? '', patientName, 'provider')
     .catch((err) => deps.logger.warn({ err, linkId: input.linkId, userId: participants.provider_id }, 'Provider disconnect email failed'));
 }
