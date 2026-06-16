@@ -51,6 +51,7 @@ import * as ProviderCreateReport from '../use-cases/reports/provider-create-repo
 import * as DashboardSummary from '../use-cases/providers/dashboard-summary';
 import * as GetAnalytics from '../use-cases/providers/get-analytics';
 import * as GetLastClinicVisit from '../use-cases/providers/get-last-clinic-visit';
+import * as GetPatientOverview from '../use-cases/providers/get-patient-overview';
 import * as RecordClinicVisit from '../use-cases/providers/record-clinic-visit';
 import * as ListActivity from '../use-cases/providers/list-activity';
 import * as GetBilling from '../use-cases/providers/get-billing';
@@ -150,6 +151,24 @@ export function providersRouter(container: Container) {
   });
 
   // ─── Patient clinical history (read-only, link-scoped) ──────────────────────
+  router.get(
+    '/patients/:patientId/overview',
+    auditLog('provider_viewed_patient_overview', 'user'),
+    async (req, res, next) => {
+      try {
+        const days = Math.min(Math.max(parseInt(String(req.query.days ?? '14'), 10) || 14, 7), 365);
+        const activityLimit = Math.min(Math.max(parseInt(String(req.query.activityLimit ?? '8'), 10) || 8, 1), 25);
+        const data = await GetPatientOverview.execute(container, {
+          providerId: req.user!.id,
+          patientId: req.params.patientId,
+          days,
+          activityLimit,
+        });
+        res.json({ data });
+      } catch (err) { next(err); }
+    },
+  );
+
   router.get(
     '/patients/:patientId/symptoms',
     validate(symptomListQuerySchema, 'query'),

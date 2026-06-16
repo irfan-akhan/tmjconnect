@@ -1299,6 +1299,58 @@ components:
               day: { type: string, description: "Day name e.g. Monday" }
               avg_pain: { type: number }
 
+    PatientOverview:
+      description: Provider patient-detail overview payload composed for the Overview tab
+      type: object
+      required: [kpis, pain_trend, treatment_plan, recent_activity]
+      properties:
+        kpis:
+          type: object
+          required: [exercise_adherence_pct, avg_pain_7d, linked_since, last_clinic_visit_at]
+          properties:
+            exercise_adherence_pct: { type: [number, "null"], description: "7-day adherence percentage (0-100)" }
+            avg_pain_7d: { type: [number, "null"], description: "Average pain level over the last 7 days" }
+            linked_since: { type: [string, "null"], format: date-time }
+            last_clinic_visit_at: { type: [string, "null"], format: date-time }
+        pain_trend:
+          type: array
+          description: Daily pain trend points for the requested days window
+          items:
+            type: object
+            required: [date, pain_level]
+            properties:
+              date: { type: string, format: date }
+              pain_level: { type: number }
+        treatment_plan:
+          type: object
+          required: [diagnosis, current_protocol]
+          properties:
+            diagnosis: { type: [string, "null"] }
+            current_protocol:
+              type: array
+              description: Active exercise protocol summary for quick overview display
+              items:
+                type: object
+                required: [assignment_id, title, frequency, sets]
+                properties:
+                  assignment_id: { type: string, format: uuid }
+                  title: { type: string }
+                  frequency: { type: string }
+                  sets: { type: integer }
+        recent_activity:
+          type: array
+          description: Most recent merged activity items (reports, symptoms, assignments)
+          items:
+            type: object
+            required: [id, type, tone, at, title, subtitle]
+            properties:
+              id: { type: string }
+              type: { type: string, enum: [report, symptom, assignment] }
+              tone: { type: string, enum: [urgent, info, exercise, calm] }
+              at: { type: string, format: date-time }
+              title: { type: string }
+              subtitle: { type: string }
+
     ProviderAnalytics:
       description: Provider-wide analytics across all linked patients
       type: object
@@ -4605,6 +4657,39 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/PatientAnalytics' }
         '403': { description: Provider is not linked to this patient }
+
+  /providers/patients/{patientId}/overview:
+    get:
+      tags: [Providers]
+      summary: Overview payload for a linked patient detail screen
+      description: |
+        Returns a single aggregated payload used by the provider portal Overview tab.
+        Combines KPIs, pain trend, treatment snapshot, and merged recent activity.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: days
+          in: query
+          description: Time window used for pain trend analytics.
+          schema: { type: integer, minimum: 7, maximum: 365, default: 14 }
+        - name: activityLimit
+          in: query
+          description: Maximum number of recent activity items to return.
+          schema: { type: integer, minimum: 1, maximum: 25, default: 8 }
+      responses:
+        '200':
+          description: Aggregated patient overview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PatientOverview' }
+        '403': { description: Provider is not linked to this patient }
+        '404': { description: Patient not found }
 
   /providers/patients/{patientId}/clinic-visits/last:
     get:
