@@ -11,6 +11,7 @@ import * as EmailInvite from '../use-cases/linking/email-invite';
 import * as AcceptCode from '../use-cases/linking/accept-code';
 import * as Disconnect from '../use-cases/linking/disconnect';
 import * as ListLinks from '../use-cases/linking/list-links';
+import * as GetMetrics from '../use-cases/linking/get-metrics';
 
 export function linkingRouter(container: Container) {
   const router = Router();
@@ -46,6 +47,13 @@ export function linkingRouter(container: Container) {
       const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
       const result = await ListCodes.execute(container, { providerId: req.user!.id, limit, offset, sortBy: sortBy as ListCodes.ListCodesInput['sortBy'], sortOrder });
       res.json({ data: result.items, meta: result.meta });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/metrics', authorize('provider'), async (req, res, next) => {
+    try {
+      const data = await GetMetrics.execute(container, { providerId: req.user!.id });
+      res.json({ data });
     } catch (err) { next(err); }
   });
 
