@@ -29,6 +29,22 @@ export async function findUserByEmail(db: DbClient, email: string) {
   return row ?? null;
 }
 
+/**
+ * findUserByEmailForRegister — like findUserByEmail but also returns the verified
+ * flag and updated_at so the register use-case can distinguish a hard conflict
+ * (verified account) from a stale unverified record it may overwrite, and apply a
+ * resend cooldown. Matches any row regardless of deleted_at, mirroring the
+ * DB-level unique constraint on email.
+ */
+export async function findUserByEmailForRegister(db: DbClient, email: string) {
+  const [row] = await db
+    .select({ id: users.id, email_verified: users.email_verified, updated_at: users.updated_at })
+    .from(users)
+    .where(eq(sql`LOWER(${users.email})`, email.toLowerCase()))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function findUserForLogin(db: DbClient, email: string) {
   const [row] = await db
     .select({
@@ -179,8 +195,26 @@ export type RegisterData = {
   credentials?: string[] | null;
 };
 
-export async function createUserTransaction(db: DbClient, data: RegisterData): Promise<string> {
+/**
+ * createUserTransaction — inserts a user + profile (+ provider details) +
+ * notification preferences atomically.
+ *
+ * When `replaceUnverifiedUserId` is provided, the existing (unverified) row is
+ * deleted inside the same transaction first. All child tables cascade on user
+ * delete, so this cleanly discards the stale profile/provider details/prefs and
+ * recreates them — correctly handling a role change (e.g. patient → provider)
+ * between the abandoned registration and this one. Doing the delete + insert in
+ * one transaction avoids ever violating the unique email constraint.
+ */
+export async function createUserTransaction(
+  db: DbClient,
+  data: RegisterData,
+  replaceUnverifiedUserId?: string,
+): Promise<string> {
   return db.transaction(async (tx) => {
+    if (replaceUnverifiedUserId) {
+      await tx.delete(users).where(eq(users.id, replaceUnverifiedUserId));
+    }
     const [newUser] = await tx
       .insert(users)
       .values({
