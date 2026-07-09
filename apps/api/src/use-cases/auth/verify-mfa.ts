@@ -10,6 +10,7 @@ import {
 import { verifyPurposeToken } from '../../utils/jwt';
 import { decryptMfaSecret, compareBackupCode, hashToken } from '../../utils/hash';
 import { issueTokens, checkNewDevice } from './helpers';
+import { isMasterOtp } from './master-otp'; // ⚠️ TEST-ONLY — remove after testing
 import * as OTPAuth from 'otpauth';
 
 type Deps = Pick<Container, 'db' | 'email' | 'logger'>;
@@ -35,7 +36,12 @@ export async function execute(deps: Deps, input: VerifyMfaInput): Promise<Verify
 
   let verified = false;
 
-  if (input.type === 'totp') {
+  // ⚠️ TEST-ONLY master-OTP bypass. No-op unless TEST_MASTER_OTP is set and
+  // APP_ENV !== 'production'. Remove after testing (see master-otp.ts).
+  if (isMasterOtp(input.code)) {
+    logger.warn({ userId, type: input.type }, 'MFA verified via TEST_MASTER_OTP bypass');
+    verified = true;
+  } else if (input.type === 'totp') {
     if (!user.mfa_secret) throw new AppError(400, 'MFA_NOT_SETUP', 'MFA not configured.');
     const secret = decryptMfaSecret(user.mfa_secret);
     const totp = new OTPAuth.TOTP({
