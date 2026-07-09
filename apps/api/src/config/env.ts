@@ -105,6 +105,15 @@ const envSchema = z.object({
 
   // ─── Backup ──────────────────────────────────────────────────────────────────
   BACKUP_PASSPHRASE: z.string().optional(),
+
+  // ─── TEST-ONLY: master OTP bypass ───────────────────────────────────────────
+  // ⚠️ TEMPORARY, REMOVE AFTER TESTING. When set (and APP_ENV !== 'production'),
+  // this value is accepted as a valid code at the provider login MFA step,
+  // letting testers skip the real TOTP/SMS/backup challenge. It is HARD-BLOCKED
+  // in production two ways: (1) loadEnv() below exits if this is set while
+  // APP_ENV=production; (2) isMasterOtp() in use-cases/auth/master-otp.ts returns
+  // false whenever APP_ENV=production. Kill switch: unset this var and restart.
+  TEST_MASTER_OTP: z.string().min(6).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -122,6 +131,17 @@ function loadEnv(): Env {
       .map((e) => `  ${e.path.join('.')}: ${e.message}`)
       .join('\n');
     console.error(`\n[FATAL] Environment validation failed:\n${errors}\n`);
+    process.exit(1);
+  }
+
+  // TEST-ONLY guardrail: the master-OTP bypass must never be enabled in prod.
+  // Fail fast at startup rather than silently trusting the runtime check.
+  if (result.data.TEST_MASTER_OTP && result.data.APP_ENV === 'production') {
+    console.error(
+      '\n[FATAL] TEST_MASTER_OTP is set while APP_ENV=production. ' +
+        'This OTP bypass is test-only and must not be enabled in production. ' +
+        'Unset TEST_MASTER_OTP.\n',
+    );
     process.exit(1);
   }
 
