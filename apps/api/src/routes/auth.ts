@@ -376,6 +376,7 @@ export function authRouter(container: Container) {
       await LogoutAll.execute(container, {
         userId: req.user!.id,
         password: req.body.password,
+        currentRefreshToken: req.body.refresh_token,
         currentDeviceInfo: extractDeviceInfo(req),
       });
       res.json({ message: 'Logged out from all other devices.' });
