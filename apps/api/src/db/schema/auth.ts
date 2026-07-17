@@ -38,6 +38,11 @@ export const refreshTokens = pgTable('refresh_tokens', {
 export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey().default(sql`uuid_generate_v4()`),
   user_id: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // Links this session to a single login lineage (one token_family per login,
+  // reused across refresh rotations). This is what makes each login its own
+  // session row instead of collapsing every login on a device into one.
+  // Nullable: legacy rows created before this column age out within 7 days.
+  token_family: uuid('token_family'),
   device_info: text('device_info'),
   ip_address: inet('ip_address'),
   // Updated on every authenticated request. Used for 15-min provider inactivity check.

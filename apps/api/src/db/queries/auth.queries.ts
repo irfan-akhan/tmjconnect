@@ -401,21 +401,17 @@ export async function insertTokenPair(
       expires_at: refreshExpiresAt,
     });
 
-    // Upsert session: reuse existing session for same user+device, or create new.
-    const existingSession = await tx
-      .update(sessions)
-      .set({ last_active: sql`NOW()`, ip_address: ip, expires_at: sessionExpiresAt })
-      .where(and(eq(sessions.user_id, userId), eq(sessions.device_info, deviceInfo)))
-      .returning({ id: sessions.id });
-
-    if (existingSession.length === 0) {
-      await tx.insert(sessions).values({
-        user_id: userId,
-        device_info: deviceInfo,
-        ip_address: ip,
-        expires_at: sessionExpiresAt,
-      });
-    }
+    // One session per login: a fresh token_family is minted on every login, so
+    // each login gets its own session row (two browsers on one device — even with
+    // the same User-Agent — now show as two sessions). Refresh rotations reuse the
+    // family and update this same row (see rotateRefreshTokenTransaction).
+    await tx.insert(sessions).values({
+      user_id: userId,
+      token_family: tokenFamily,
+      device_info: deviceInfo,
+      ip_address: ip,
+      expires_at: sessionExpiresAt,
+    });
   });
 }
 
@@ -463,16 +459,19 @@ export async function rotateRefreshTokenTransaction(
       expires_at: refreshExpiresAt,
     });
 
-    // Upsert session: update existing session for this user+device, or create one.
+    // Bump the session belonging to THIS login lineage (token_family), not every
+    // session sharing the device. If the row is missing (e.g. a legacy session
+    // predating token_family, or one revoked out-of-band) recreate it for the family.
     const existingSession = await tx
       .update(sessions)
       .set({ last_active: sql`NOW()`, ip_address: ip, expires_at: sessionExpiresAt })
-      .where(and(eq(sessions.user_id, userId), eq(sessions.device_info, deviceInfo)))
+      .where(and(eq(sessions.user_id, userId), eq(sessions.token_family, tokenFamily)))
       .returning({ id: sessions.id });
 
     if (existingSession.length === 0) {
       await tx.insert(sessions).values({
         user_id: userId,
+        token_family: tokenFamily,
         device_info: deviceInfo,
         ip_address: ip,
         expires_at: sessionExpiresAt,
@@ -529,12 +528,14 @@ export async function revokeRefreshTokenAndDeleteSession(db: DbClient, tokenHash
     .update(refreshTokens)
     .set({ revoked_at: sql`NOW()` })
     .where(and(eq(refreshTokens.token_hash, tokenHash), isNull(refreshTokens.revoked_at)))
-    .returning({ user_id: refreshTokens.user_id, device_info: refreshTokens.device_info });
+    .returning({ user_id: refreshTokens.user_id, token_family: refreshTokens.token_family });
 
-  if (revoked?.user_id && revoked?.device_info) {
+  // Delete only the session for THIS login lineage, so logging out of one browser
+  // does not drop the user's other sessions on the same device.
+  if (revoked?.user_id && revoked?.token_family) {
     await db
       .delete(sessions)
-      .where(and(eq(sessions.user_id, revoked.user_id), eq(sessions.device_info, revoked.device_info)));
+      .where(and(eq(sessions.user_id, revoked.user_id), eq(sessions.token_family, revoked.token_family)));
   }
 }
 

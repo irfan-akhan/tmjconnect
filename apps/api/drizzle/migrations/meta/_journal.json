@@ -141,6 +141,20 @@
       "when": 1744329619000,
       "tag": "0020_provider_license_type_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1744329620000,
+      "tag": "0021_ai_clinical_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1744329621000,
+      "tag": "0022_sessions_token_family",
+      "breakpoints": true
     }
   ]
 }
