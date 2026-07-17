@@ -78,8 +78,8 @@ export function authRouter(container: Container) {
     auditLog('auth.patient_registered', 'user'),
     async (req, res, next) => {
       try {
-        const result = await Register.execute(container, { role: 'patient', ...req.body });
-        if (result) res.locals.auditResourceId = result.userId;
+        const result = (await Register.execute(container, { role: 'patient', ...req.body })) as { userId: string } | null;
+        if (result?.userId) res.locals.auditResourceId = result.userId;
         res.status(201).json({ message: 'Check your email to verify your account.' });
       } catch (err) { next(err); }
     },
@@ -147,8 +147,8 @@ export function authRouter(container: Container) {
     auditLog('auth.provider_registered', 'user'),
     async (req, res, next) => {
       try {
-        const result = await Register.execute(container, { role: 'provider', ...req.body });
-        if (result) res.locals.auditResourceId = result.userId;
+        const result = (await Register.execute(container, { role: 'provider', ...req.body })) as { userId: string } | null;
+        if (result?.userId) res.locals.auditResourceId = result.userId;
         res.status(201).json({ message: 'Check your email to verify your account.' });
       } catch (err) { next(err); }
     },
