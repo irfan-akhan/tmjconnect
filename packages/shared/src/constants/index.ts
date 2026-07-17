@@ -78,6 +78,52 @@ export type PatientActivityAction = (typeof PATIENT_ACTIVITY_ACTIONS)[number];
 export const REMINDER_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 export type ReminderDay = (typeof REMINDER_DAYS)[number];
 
+// ─── AI Clinical Reports ───────────────────────────────────────────────────────────
+export const AI_REPORT_TYPES = ['progress', 'treatment_summary'] as const;
+export type AiReportType = (typeof AI_REPORT_TYPES)[number];
+
+export const AI_REPORT_STATUSES = ['draft', 'approved'] as const;
+export type AiReportStatus = (typeof AI_REPORT_STATUSES)[number];
+
+export const AI_REPORT_PROVIDER_OUTCOMES = [
+  'approved',
+  'discarded',
+  'edited_then_approved',
+] as const;
+export type AiReportProviderOutcome = (typeof AI_REPORT_PROVIDER_OUTCOMES)[number];
+
+export const AI_REPORT_DISCARD_REASONS = [
+  'clinically_inaccurate',
+  'missing_information',
+  'wrong_tone',
+  'formatting_issues',
+  'not_useful',
+  'other',
+] as const;
+export type AiReportDiscardReason = (typeof AI_REPORT_DISCARD_REASONS)[number];
+
+export const AI_REPORT_TREND_DIRECTIONS = ['improving', 'worsening', 'stable'] as const;
+export type AiReportTrendDirection = (typeof AI_REPORT_TREND_DIRECTIONS)[number];
+
+/** Anthropic model used for clinical report drafting. */
+export const AI_REPORT_MODEL = 'claude-sonnet-4-6';
+/** Per-provider generation rate limit (per rolling hour). */
+export const AI_REPORT_RATE_LIMIT_PER_HOUR = 20;
+
+// ─── Diagnostic data-sufficiency thresholds (CLINICAL — pending DDS/DMD sign-off) ────
+// These gate whether the AI offers a DC/TMD diagnostic impression vs. an explicit
+// "insufficient data" statement. They are surfaced here as named constants so the
+// medical founder can tune them in one place. The prompt interpolates
+// AI_REPORT_MIN_LOGGING_DAYS; the data collector uses AI_REPORT_DATA_GAP_MISSING_THRESHOLD.
+
+/** Minimum days-with-logs in the period before the AI may offer a diagnostic impression. */
+export const AI_REPORT_MIN_LOGGING_DAYS = 7;
+/**
+ * Fraction of days in the period with no symptom log above which the period is flagged
+ * as a data gap (dataGapFlag). 0.3 = "more than 30% of days missing".
+ */
+export const AI_REPORT_DATA_GAP_MISSING_THRESHOLD = 0.3;
+
 // ─── Pagination ──────────────────────────────────────────────────────────────────
 export const DEFAULT_PAGE_LIMIT = 20;
 export const MAX_PAGE_LIMIT = 100;
