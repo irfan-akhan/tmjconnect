@@ -106,6 +106,7 @@ export async function getActiveSessions(
     .select({
       id: sessions.id,
       user_id: sessions.user_id,
+      token_family: sessions.token_family,
       device_info: sessions.device_info,
       ip_address: sessions.ip_address,
       last_active: sessions.last_active,
@@ -125,10 +126,11 @@ export async function deleteSessionById(
   sessionId: string,
   userId: string,
 ): Promise<boolean> {
-  // Get the session's device_info before deleting, so we can also revoke
-  // refresh tokens for that device (prevents the device from refreshing back in).
+  // Read the session's login lineage (token_family) before deleting, so we can
+  // revoke the matching refresh tokens too — otherwise the next refresh would
+  // silently recreate this session.
   const [session] = await db
-    .select({ id: sessions.id, device_info: sessions.device_info })
+    .select({ id: sessions.id, token_family: sessions.token_family, device_info: sessions.device_info })
     .from(sessions)
     .where(and(eq(sessions.id, sessionId), eq(sessions.user_id, userId)))
     .limit(1);
@@ -137,8 +139,22 @@ export async function deleteSessionById(
 
   await db.delete(sessions).where(eq(sessions.id, session.id));
 
-  // Revoke all active refresh tokens for this user+device
-  if (session.device_info) {
+  if (session.token_family) {
+    // Revoke exactly the refresh-token family for this login, leaving the user's
+    // other logins on the same device untouched.
+    await db
+      .update(refreshTokens)
+      .set({ revoked_at: sql`NOW()` })
+      .where(
+        and(
+          eq(refreshTokens.user_id, userId),
+          eq(refreshTokens.token_family, session.token_family),
+          isNull(refreshTokens.revoked_at),
+        ),
+      );
+  } else if (session.device_info) {
+    // Legacy session created before token_family existed — fall back to the old
+    // device-based revocation so it still can't refresh back in.
     await db
       .update(refreshTokens)
       .set({ revoked_at: sql`NOW()` })

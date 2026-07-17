@@ -2,7 +2,7 @@
  * auth.queries.ts — All database interactions for the auth module.
  * This layer only reads and writes data. No business logic, no AppErrors.
  */
-import { eq, and, ne, sql, isNull, desc } from 'drizzle-orm';
+import { eq, and, ne, or, sql, isNull, desc } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import {
   users,
@@ -537,6 +537,38 @@ export async function revokeRefreshTokenAndDeleteSession(db: DbClient, tokenHash
       .delete(sessions)
       .where(and(eq(sessions.user_id, revoked.user_id), eq(sessions.token_family, revoked.token_family)));
   }
+}
+
+/**
+ * deleteAllTokensAndSessionsExceptFamily — "sign out everywhere except this login".
+ * Revokes every refresh token and deletes every session for the user EXCEPT the
+ * current login lineage (token_family). Unlike the device-based variant, this
+ * correctly signs out other logins that share the same device/User-Agent, while
+ * keeping the caller's own session alive.
+ */
+export async function deleteAllTokensAndSessionsExceptFamily(db: DbClient, userId: string, exceptFamily: string) {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(refreshTokens)
+      .set({ revoked_at: sql`NOW()` })
+      .where(
+        and(
+          eq(refreshTokens.user_id, userId),
+          ne(refreshTokens.token_family, exceptFamily),
+          isNull(refreshTokens.revoked_at),
+        ),
+      );
+    // Delete every session that is not this login — including legacy rows with a
+    // NULL token_family (which ne(...) alone would skip).
+    await tx
+      .delete(sessions)
+      .where(
+        and(
+          eq(sessions.user_id, userId),
+          or(ne(sessions.token_family, exceptFamily), isNull(sessions.token_family)),
+        ),
+      );
+  });
 }
 
 export async function deleteAllTokensAndSessions(db: DbClient, userId: string, exceptDeviceInfo?: string) {

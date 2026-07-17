@@ -268,7 +268,7 @@ export function providersRouter(container: Container) {
   router.get('/me/sessions', auditLog('provider_sessions_viewed', 'session'), async (req, res, next) => {
     try {
       const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
-      const result = await ListSessions.execute(container, { userId: req.user!.id, limit, offset, sortBy: sortBy as ListSessions.ListSessionsInput['sortBy'], sortOrder });
+      const result = await ListSessions.execute(container, { userId: req.user!.id, currentFamily: req.user!.sid, limit, offset, sortBy: sortBy as ListSessions.ListSessionsInput['sortBy'], sortOrder });
       res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
     } catch (err) { next(err); }
   });

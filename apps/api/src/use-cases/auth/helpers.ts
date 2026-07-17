@@ -21,14 +21,15 @@ export async function issueTokens(
   ip: string | null,
   existingFamily?: string,
 ) {
+  const tokenFamily = existingFamily ?? randomUUID();
   const accessToken = signAccessToken({
     id: user.id,
     email: user.email,
     role: user.role as 'patient' | 'provider' | 'admin',
+    sid: tokenFamily,
   });
   const tokenValue = generateToken(64);
   const tokenHash = hashToken(tokenValue);
-  const tokenFamily = existingFamily ?? randomUUID();
   await insertTokenPair(db, user.id, tokenHash, tokenFamily, deviceInfo, ip, refreshTokenExpiresAt());
   return { accessToken, refreshTokenValue: tokenValue };
 }

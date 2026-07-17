@@ -63,10 +63,13 @@ export async function execute(deps: Deps, input: RefreshTokenInput): Promise<Ref
   if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found.');
 
   // Generate new tokens before the transaction (CPU work outside DB).
+  // Rotation stays within the same login lineage, so the access token keeps the
+  // same sid (token_family) — the current-session marker survives refreshes.
   const accessToken = signAccessToken({
     id: user.id,
     email: user.email,
     role: user.role as 'patient' | 'provider' | 'admin',
+    sid: stored.token_family,
   });
   const newTokenValue = generateToken(64);
   const newTokenHash = hashToken(newTokenValue);

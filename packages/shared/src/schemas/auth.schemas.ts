@@ -105,6 +105,11 @@ export const refreshSchema = z.object({
 
 export const logoutAllSchema = z.object({
   password: z.string().min(1, 'Password is required'),
+  // Optional: the caller's current refresh token. Lets the server keep THIS login
+  // (its token_family) signed in while revoking every other session — including
+  // other logins on the same device/User-Agent, which a device-based match can't
+  // distinguish. Falls back to device-based revocation when omitted.
+  refresh_token: z.string().optional(),
 });
 
 // ─── Forgot Password ──────────────────────────────────────────────────────────────

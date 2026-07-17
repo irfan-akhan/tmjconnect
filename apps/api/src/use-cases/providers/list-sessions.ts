@@ -7,6 +7,9 @@ type Deps = Pick<Container, 'db'>;
 
 export type ListSessionsInput = {
   userId: string;
+  /** The caller's current login lineage (from the access token's `sid` claim),
+   *  used only to flag which row is `is_current`. Never returned to the client. */
+  currentFamily?: string | null;
   limit?: number;
   offset?: number;
   sortBy?: 'login_at' | 'last_activity';
@@ -36,6 +39,7 @@ export async function execute(deps: Deps, input: ListSessionsInput) {
       ip_address: ip,
       last_active: r.last_active,
       created_at: r.created_at,
+      is_current: !!input.currentFamily && r.token_family === input.currentFamily,
     };
   });
   return { items, meta: { limit, offset, hasMore: items.length === limit, sortBy: input.sortBy, sortOrder } };
