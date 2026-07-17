@@ -9,7 +9,7 @@ import {
   restoreSoftDeletedUser,
 } from '../../db/queries/auth.queries';
 import { comparePassword, dummyPasswordCompare } from '../../utils/hash';
-import { signMfaToken } from '../../utils/jwt';
+import { signMfaToken, signMfaSetupToken } from '../../utils/jwt';
 import { issueTokens, checkNewDevice } from './helpers';
 
 type Deps = Pick<Container, 'db' | 'email' | 'logger'> & {
@@ -28,7 +28,8 @@ export type LoginInput = {
 
 export type LoginOutput =
   | { type: 'tokens'; accessToken: string; refreshTokenValue: string }
-  | { type: 'mfa_required'; mfa_token: string };
+  | { type: 'mfa_required'; mfa_token: string }
+  | { type: 'mfa_setup_required'; setup_token: string };
 
 export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutput> {
   const { db, email, logger, loginLimiter } = deps;
@@ -42,6 +43,18 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
   if (!user) {
     await dummyPasswordCompare();
     logger.debug({ role: input.role }, 'login: rejected — unknown email');
+    // Record the failed attempt so credential-stuffing against non-existent
+    // accounts is visible in security monitoring (user_id null — email column
+    // exists precisely for this case). Symmetric with the invalid_password path,
+    // which also keeps the response uniform against enumeration.
+    await insertLoginEvent(db, {
+      user_id: null,
+      email: input.email.toLowerCase(),
+      success: false,
+      ip_address: input.ip,
+      device_info: input.deviceInfo,
+      failure_reason: 'unknown_email',
+    });
     throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
   }
   logger.debug({ userId: user.id, role: user.role }, 'login: user found');
@@ -154,9 +167,14 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
   }
 
   // Provider & Admin flow: always require MFA.
+  // An account that verified its email but never finished MFA enrollment (e.g. the
+  // onboarding tab was closed) would otherwise be permanently stuck: it can't
+  // re-register (409) and the original enroll setup_token has long expired. Since
+  // the password has just been verified above, it's safe to hand back a fresh
+  // enroll setup_token so the client can resume MFA setup on the same account.
   if (!user.mfa_enabled) {
-    logger.debug({ userId: user.id }, `login: rejected — ${input.role} has no MFA`);
-    throw new AppError(403, 'MFA_NOT_SETUP', 'MFA is not set up. Please complete your account setup first.');
+    logger.debug({ userId: user.id }, `login: ${input.role} has no MFA — issuing setup_token to resume enrollment`);
+    return { type: 'mfa_setup_required', setup_token: signMfaSetupToken(user.id, 'enroll') };
   }
   logger.debug({ userId: user.id }, `login: ${input.role} mfa_token issued`);
   return { type: 'mfa_required', mfa_token: signMfaToken(user.id) };

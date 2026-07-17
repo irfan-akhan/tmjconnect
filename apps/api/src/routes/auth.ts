@@ -78,7 +78,8 @@ export function authRouter(container: Container) {
     auditLog('auth.patient_registered', 'user'),
     async (req, res, next) => {
       try {
-        await Register.execute(container, { role: 'patient', ...req.body });
+        const result = await Register.execute(container, { role: 'patient', ...req.body });
+        if (result) res.locals.auditResourceId = result.userId;
         res.status(201).json({ message: 'Check your email to verify your account.' });
       } catch (err) { next(err); }
     },
@@ -92,8 +93,11 @@ export function authRouter(container: Container) {
       );
       if (result.type === 'tokens') {
         res.json({ access_token: result.accessToken, refresh_token: result.refreshTokenValue });
-      } else {
+      } else if (result.type === 'mfa_required') {
         res.json({ mfa_required: true, mfa_token: result.mfa_token });
+      } else {
+        // Patients enroll MFA post-login, so login never returns 'mfa_setup_required' for them.
+        res.status(500).json({ error: { code: 'INTERNAL', message: 'Unexpected login result.' } });
       }
     } catch (err) { next(err); }
   });
@@ -143,7 +147,8 @@ export function authRouter(container: Container) {
     auditLog('auth.provider_registered', 'user'),
     async (req, res, next) => {
       try {
-        await Register.execute(container, { role: 'provider', ...req.body });
+        const result = await Register.execute(container, { role: 'provider', ...req.body });
+        if (result) res.locals.auditResourceId = result.userId;
         res.status(201).json({ message: 'Check your email to verify your account.' });
       } catch (err) { next(err); }
     },
@@ -155,6 +160,11 @@ export function authRouter(container: Container) {
         { ...container, loginLimiter },
         { role: 'provider', email: req.body.email, password: req.body.password, ip: req.ip ?? null, deviceInfo: extractDeviceInfo(req) },
       );
+      if (result.type === 'mfa_setup_required') {
+        // Verified account that never finished MFA enrollment — let the client resume setup.
+        res.json({ mfa_setup_required: true, setup_token: result.setup_token });
+        return;
+      }
       if (result.type !== 'mfa_required') {
         res.status(500).json({ error: { code: 'INTERNAL', message: 'Unexpected login result.' } });
         return;
@@ -169,6 +179,11 @@ export function authRouter(container: Container) {
         { ...container, loginLimiter },
         { role: 'admin', email: req.body.email, password: req.body.password, ip: req.ip ?? null, deviceInfo: extractDeviceInfo(req) },
       );
+      if (result.type === 'mfa_setup_required') {
+        // Verified account that never finished MFA enrollment — let the client resume setup.
+        res.json({ mfa_setup_required: true, setup_token: result.setup_token });
+        return;
+      }
       if (result.type !== 'mfa_required') {
         res.status(500).json({ error: { code: 'INTERNAL', message: 'Unexpected login result.' } });
         return;
