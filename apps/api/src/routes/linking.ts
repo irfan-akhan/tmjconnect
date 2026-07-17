@@ -18,7 +18,7 @@ export function linkingRouter(container: Container) {
   router.use(authenticate);
 
   // ─── View active links (both roles) ──────────────────────────────────────────
-  router.get('/links', validate(linkingLinksQuerySchema, 'query'), async (req, res, next) => {
+  router.get('/links', validate(linkingLinksQuerySchema, 'query'), auditLog('links_viewed', 'patient_provider_link'), async (req, res, next) => {
     try {
       const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
       const result = await ListLinks.execute(container, { userId: req.user!.id, role: req.user!.role, limit, offset, sortBy: sortBy as ListLinks.ListLinksInput['sortBy'], sortOrder });

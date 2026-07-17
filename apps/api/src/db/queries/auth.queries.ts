@@ -359,7 +359,7 @@ export async function markBackupCodeUsed(db: DbClient, codeId: string) {
 // ─── Login events ──────────────────────────────────────────────────────────────
 
 export type LoginEventData = {
-  user_id: string;
+  user_id: string | null;
   email: string;
   success: boolean;
   ip_address: string | null;
