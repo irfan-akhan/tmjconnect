@@ -477,11 +477,18 @@ function templates(appUrl: string) {
         html: baseTemplate(`
           <h2 style="color:${BRAND_NAVY};">Connect with your provider</h2>
           <p style="line-height:1.6;color:#333;"><strong>${provider || 'Your provider'}</strong> invited you to use TMJConnect for symptom tracking, exercises, and care updates between visits.</p>
-          <p style="line-height:1.6;color:#333;">Open TMJConnect and enter this connection code:</p>
+          <p style="line-height:1.6;color:#333;">Follow these steps on your phone:</p>
+          <ol style="line-height:1.7;color:#333;padding-left:20px;margin:16px 0;">
+            <li><strong>Open the TMJConnect app.</strong> If you already have it installed, launch it now. If not, download TMJConnect from the App Store or Google Play first.</li>
+            <li><strong>Sign in or create your account.</strong> Use the same email address you shared with your provider so TMJConnect can match your records.</li>
+            <li><strong>Open the provider connection screen.</strong> From the home screen, tap <strong>Connect Provider</strong>. If you are already in Profile, tap <strong>Linked Providers</strong> and then <strong>+ Connect Another Provider</strong>.</li>
+            <li><strong>Enter the invite code.</strong> Type the 6-character code below exactly as shown, then tap <strong>Connect to Provider</strong>.</li>
+            <li><strong>Wait for confirmation.</strong> TMJConnect will show that your provider has been linked successfully, and you can start using the app for reports, exercises, and care updates.</li>
+          </ol>
           <div style="font-size:28px;font-weight:bold;letter-spacing:6px;color:${BRAND_NAVY};text-align:center;padding:16px;background:#f5f5f5;border-radius:4px;margin:16px 0;">
             ${code}
           </div>
-          ${secondaryNote('This provider connection code expires in 7 days.')}
+          ${secondaryNote('After you enter the code, TMJConnect will confirm the connection and show your linked provider. This provider connection code expires in 7 days. If it has expired, ask your provider to send a new one.')}
         `),
       };
     },
