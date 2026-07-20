@@ -679,6 +679,12 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
     status: 'info',
     description: 'Checked logged-in devices',
   },
+  'provider_login_events_viewed': {
+    title: 'Login history viewed',
+    category: 'view',
+    status: 'info',
+    description: 'Reviewed sign-in history',
+  },
   'provider_activity_viewed': {
     title: 'Activity log viewed',
     category: 'view',

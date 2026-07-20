@@ -146,14 +146,6 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
     throw new AppError(403, 'ACCOUNT_INACTIVE', 'Your account has been deactivated. Contact support.');
   }
 
-  await insertLoginEvent(db, {
-    user_id: user.id,
-    email: user.email,
-    success: true,
-    ip_address: input.ip,
-    device_info: input.deviceInfo,
-  });
-
   // Patient flow: tokens directly, or MFA if patient opted in.
   if (input.role === 'patient') {
     if (user.mfa_enabled) {
@@ -161,6 +153,13 @@ export async function execute(deps: Deps, input: LoginInput): Promise<LoginOutpu
       return { type: 'mfa_required', mfa_token: signMfaToken(user.id) };
     }
     const tokens = await issueTokens(db, user, input.deviceInfo, input.ip);
+    await insertLoginEvent(db, {
+      user_id: user.id,
+      email: user.email,
+      success: true,
+      ip_address: input.ip,
+      device_info: input.deviceInfo,
+    });
     checkNewDevice(db, email, logger, user.id, user.email, input.ip ?? '', input.deviceInfo);
     logger.debug({ userId: user.id }, 'login: patient tokens issued');
     return { type: 'tokens', ...tokens };

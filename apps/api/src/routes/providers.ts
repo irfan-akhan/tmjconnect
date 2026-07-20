@@ -32,6 +32,7 @@ import * as GetPatientDetail from '../use-cases/providers/get-patient-detail';
 import * as ListPatientSymptoms from '../use-cases/providers/list-patient-symptoms';
 import * as ListPatientReports from '../use-cases/providers/list-patient-reports';
 import * as ListSessions from '../use-cases/providers/list-sessions';
+import * as ListLoginEvents from '../use-cases/providers/list-login-events';
 import * as RevokeSession from '../use-cases/providers/revoke-session';
 import * as ListExercises from '../use-cases/providers/list-exercises';
 import * as CreateExercise from '../use-cases/providers/create-exercise';
@@ -270,6 +271,20 @@ export function providersRouter(container: Container) {
       const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
       const result = await ListSessions.execute(container, { userId: req.user!.id, currentFamily: req.user!.sid, limit, offset, sortBy: sortBy as ListSessions.ListSessionsInput['sortBy'], sortOrder });
       res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
+    } catch (err) { next(err); }
+  });
+
+  router.get('/me/login-events', auditLog('provider_login_events_viewed', 'login_event'), async (req, res, next) => {
+    try {
+      const { limit, offset, sortBy, sortOrder } = parseListQuery(req.query);
+      const result = await ListLoginEvents.execute(container, {
+        userId: req.user!.id,
+        limit,
+        offset,
+        sortBy: sortBy as ListLoginEvents.ListLoginEventsInput['sortBy'],
+        sortOrder,
+      });
+      res.json({ data: result.items, meta: result.meta });
     } catch (err) { next(err); }
   });
 

@@ -14,6 +14,8 @@ export type RegisterInput = {
   last_name: string;
   phone: string;
   country: 'US' | 'CA' | 'IN';
+  state?: string;
+  city?: string;
   date_of_birth?: string;
   timezone?: string;
   license_number?: string;
@@ -23,7 +25,12 @@ export type RegisterInput = {
   credentials?: string[] | null;
 };
 
-export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
+/**
+ * Returns the created/replaced user's id so the route can record it as the audit
+ * resource_id, or null when nothing was written (verified-conflict throws; the
+ * unverified-within-cooldown path returns null).
+ */
+export async function execute(deps: Deps, input: RegisterInput): Promise<{ userId: string } | null> {
   const { db, email, logger } = deps;
   logger.debug({ role: input.role }, 'register: start');
 
@@ -45,7 +52,7 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
     const cooldownAgo = new Date(Date.now() - RESEND_VERIFY_COOLDOWN_SECONDS * 1000);
     if (existing.updated_at && existing.updated_at > cooldownAgo) {
       logger.debug({ role: input.role }, 'register: unverified re-register within cooldown — skipping resend');
-      return;
+      return null;
     }
   }
 
@@ -53,7 +60,7 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
   const email_verify_code = generateVerifyCode();
   const email_verify_expires = new Date(Date.now() + VERIFICATION_CODE_TTL_SECONDS * 1000);
 
-  await createUserTransaction(db, {
+  const userId = await createUserTransaction(db, {
     email: input.email.toLowerCase(),
     password_hash,
     role: input.role,
@@ -63,6 +70,8 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
     last_name: input.last_name,
     phone: input.phone,
     country: input.country,
+    state: input.state,
+    city: input.city,
     date_of_birth: input.date_of_birth,
     timezone: input.timezone ?? 'America/Chicago',
     license_number: input.license_number,
@@ -78,4 +87,6 @@ export async function execute(deps: Deps, input: RegisterInput): Promise<void> {
 
   email.sendVerifyEmail(input.email, email_verify_code)
     .catch((err) => logger.error({ err }, 'Failed to send verify email'));
+
+  return { userId };
 }
