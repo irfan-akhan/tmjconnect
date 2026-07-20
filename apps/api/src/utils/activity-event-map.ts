@@ -691,6 +691,12 @@ export const ACTIVITY_EVENT_MAP: Record<string, ActivityEventConfig> = {
     status: 'info',
     description: 'Reviewed activity history',
   },
+  'provider_viewed_assignment_completions': {
+    title: 'Exercise completion history viewed',
+    category: 'view',
+    status: 'info',
+    description: 'Reviewed assignment completion breakdown',
+  },
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // PROVIDER PATIENT MANAGEMENT

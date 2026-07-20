@@ -2,7 +2,7 @@
  * providers.queries.ts — All database interactions for the providers module.
  * All patient data queries enforce link check via patientProviderLinks.
  */
-import { eq, and, isNull, desc, sql, like, or } from 'drizzle-orm';
+import { eq, and, isNull, desc, asc, sql, like, or } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import {
   users,
@@ -692,4 +692,44 @@ export async function deleteAssignment(
     .where(and(eq(exerciseAssignments.id, id), eq(exerciseAssignments.provider_id, providerId)))
     .returning({ id: exerciseAssignments.id });
   return result.length > 0;
+}
+
+export async function findPatientAssignmentForProvider(
+  db: DbClient,
+  providerId: string,
+  patientId: string,
+  assignmentId: string,
+) {
+  const [row] = await db
+    .select({
+      id: exerciseAssignments.id,
+      title: exercises.title,
+      frequency: exerciseAssignments.frequency,
+      sets: exerciseAssignments.sets,
+      assigned_at: exerciseAssignments.assigned_at,
+      status: exerciseAssignments.status,
+    })
+    .from(exerciseAssignments)
+    .innerJoin(exercises, eq(exerciseAssignments.exercise_id, exercises.id))
+    .where(and(
+      eq(exerciseAssignments.id, assignmentId),
+      eq(exerciseAssignments.provider_id, providerId),
+      eq(exerciseAssignments.patient_id, patientId),
+    ))
+    .limit(1);
+
+  return row ?? null;
+}
+
+export async function listAssignmentCompletions(
+  db: DbClient,
+  assignmentId: string,
+) {
+  return db
+    .select({
+      completed_at: exerciseCompletions.completed_at,
+    })
+    .from(exerciseCompletions)
+    .where(eq(exerciseCompletions.assignment_id, assignmentId))
+    .orderBy(asc(exerciseCompletions.completed_at));
 }
