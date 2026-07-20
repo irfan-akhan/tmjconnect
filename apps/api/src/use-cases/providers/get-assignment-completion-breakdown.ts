@@ -23,16 +23,15 @@ type FrequencyPlan = {
 
 function parseFrequency(frequency: string): FrequencyPlan {
   const raw = (frequency || 'daily').trim().toLowerCase();
-  const firstNumber = raw.match(/(\d+)\s*x?/)?.[1];
-  const numeric = firstNumber ? Math.max(parseInt(firstNumber, 10), 1) : 1;
 
-  if (raw.includes('week')) {
-    return { kind: 'weekly', cadencePerPeriod: numeric };
-  }
-
-  if (raw.includes('day')) {
-    return { kind: 'daily', cadencePerPeriod: numeric };
-  }
+  // Canonical semantics for provider-assignment frequencies:
+  // - daily      => once per day
+  // - 2x daily   => twice per day
+  // - 3x (or 3x daily) => three times per day
+  // - weekly     => once per week
+  if (raw.includes('week')) return { kind: 'weekly', cadencePerPeriod: 1 };
+  if (raw.includes('3x') || raw.includes('3×')) return { kind: 'daily', cadencePerPeriod: 3 };
+  if (raw.includes('2x') || raw.includes('2×')) return { kind: 'daily', cadencePerPeriod: 2 };
 
   return { kind: 'daily', cadencePerPeriod: 1 };
 }
