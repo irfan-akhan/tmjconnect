@@ -38,6 +38,8 @@ export const registerProviderSchema = z.object({
   last_name: z.string().min(1).max(100),
   phone: phoneSchema,
   country: countrySchema,
+  state: z.string().trim().min(1).max(50),
+  city: z.string().trim().min(1).max(100),
   date_of_birth: z.string().date('Date of birth must be YYYY-MM-DD format'),
   timezone: z.string().optional(),
   license_number: optionalCredentialIdSchema,
