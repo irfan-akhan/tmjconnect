@@ -42,6 +42,7 @@ import * as CreateAssignment from '../use-cases/providers/create-assignment';
 import * as UpdateAssignment from '../use-cases/providers/update-assignment';
 import * as DeleteAssignment from '../use-cases/providers/delete-assignment';
 import * as ListPatientAssignments from '../use-cases/providers/list-patient-assignments';
+import * as GetAssignmentCompletionBreakdown from '../use-cases/providers/get-assignment-completion-breakdown';
 import * as ListPatientNotes from '../use-cases/providers/list-patient-notes';
 import * as CreateNote from '../use-cases/providers/create-note';
 import * as UpdateNote from '../use-cases/providers/update-note';
@@ -322,6 +323,20 @@ export function providersRouter(container: Container) {
         offset,
       });
       res.json(buildListResponse(result.items, limit, offset, undefined, sortBy, sortOrder));
+    } catch (err) { next(err); }
+  });
+
+  router.get('/patients/:patientId/assignments/:assignmentId/completions', auditLog('provider_viewed_assignment_completions', 'exercise_completion'), async (req, res, next) => {
+    try {
+      const { limit, offset } = parseListQuery(req.query);
+      const result = await GetAssignmentCompletionBreakdown.execute(container, {
+        providerId: req.user!.id,
+        patientId: req.params.patientId,
+        assignmentId: req.params.assignmentId,
+        limit,
+        offset,
+      });
+      res.json({ data: result.items, meta: result.meta, assignment: result.assignment });
     } catch (err) { next(err); }
   });
 
