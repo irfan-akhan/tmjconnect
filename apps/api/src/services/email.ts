@@ -186,13 +186,11 @@ function templates(appUrl: string) {
 
     welcome: (firstName: string, recipientRole: 'patient' | 'provider' | 'admin' = 'patient') => {
       const name = escHtml(firstName);
-      const destination = recipientRole === 'patient' ? mobileLink() : webLink(appUrl, 'login');
       return {
         subject: 'Welcome to TMJConnect',
         html: baseTemplate(`
           <h2 style="color:${BRAND_NAVY};">Welcome, ${name}!</h2>
           <p style="line-height:1.6;color:#333;">Your account is ready. TMJConnect helps you track symptoms, complete assigned exercises, and stay connected with your care team between visits.</p>
-          ${ctaButton(destination, 'Open TMJConnect')}
         `),
       };
     },
@@ -232,8 +230,8 @@ function templates(appUrl: string) {
             <tr><td><strong>IP Address:</strong></td><td>${safeIp}</td></tr>
             <tr><td><strong>Device:</strong></td><td>${safeDevice}</td></tr>
           </table>
-          <p style="line-height:1.6;color:#333;">If this was you, no action is needed. If you do not recognize this sign-in, review your account security and update your password.</p>
-          ${ctaButton(mobileLink('profile'), 'Review Account Security')}
+          <p style="line-height:1.6;color:#333;">If this was you, no action is needed.</p>
+          <p style="line-height:1.6;color:#333;">If you do not recognise this sign-in, open TMJConnect and review your account security and recent login history, then change your password and sign out any device you do not recognise.</p>
         `),
       };
     },
