@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { Logger } from '../config/logger';
 import { ZodError } from 'zod';
 import { Sentry } from '../config/sentry';
+import { logSafeBody } from '../utils/logSafeBody';
 
 /**
  * Application-level error class. Route handlers throw this to signal
@@ -55,20 +56,66 @@ export function createErrorHandler(logger: Logger) {
     err: unknown,
     req: Request,
     res: Response,
-    _next: NextFunction,
+    next: NextFunction,
   ): void {
+    // If the response is already on the wire, writing another one throws
+    // ERR_HTTP_HEADERS_SENT. Express's default handler is the only thing that can
+    // correctly close the connection at this point.
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+
     const requestId = (req as Request & { requestId?: string }).requestId;
+
+    /**
+     * Diagnostic logging must never cost the client its response.
+     *
+     * Everything below is an aid to debugging, not part of the contract: a
+     * failing log transport, an unserialisable body, or a throwing getter must
+     * degrade to silence, not to a hung request or an Express default 500.
+     * The whole block — context assembly included — runs inside the try, since
+     * building the object is as capable of throwing as writing it.
+     */
+    const safeLog = (build: () => { level: 'warn' | 'error'; ctx: object; msg: string }): void => {
+      try {
+        const { level, ctx, msg } = build();
+        logger[level](ctx, msg);
+      } catch {
+        // Deliberately empty: there is no safe place left to report this, and
+        // the caller still owes the client a response.
+      }
+    };
+
+    /** Request context common to every branch. Assembled lazily inside safeLog. */
+    const reqContext = () => ({
+      requestId,
+      method: req.method,
+      url: req.originalUrl,
+      userId: req.user?.id,
+    });
 
     // 1. Zod validation errors
     if (err instanceof ZodError) {
+      const details = err.errors.map((e) => ({
+        field: e.path.join('.'),
+        message: e.message,
+      }));
+
+      // The request log records only "→ 400", which is not diagnosable on its
+      // own. Log which fields failed and the payload that failed them.
+      // logSafeBody() redacts PHI and free text by key name — see its docblock.
+      safeLog(() => ({
+        level: 'warn',
+        ctx: { ...reqContext(), validation: details, payload: logSafeBody(req.body) },
+        msg: 'Request validation failed',
+      }));
+
       res.status(400).json({
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Request validation failed.',
-          details: err.errors.map((e) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
+          details,
           requestId,
         },
       });
@@ -77,6 +124,17 @@ export function createErrorHandler(logger: Logger) {
 
     // 2. Known application errors
     if (err instanceof AppError) {
+      safeLog(() => ({
+        level: 'warn',
+        ctx: {
+          ...reqContext(),
+          code: err.code,
+          statusCode: err.statusCode,
+          payload: logSafeBody(req.body),
+        },
+        msg: err.message,
+      }));
+
       res.status(err.statusCode).json({
         error: {
           code: err.code,
@@ -90,6 +148,13 @@ export function createErrorHandler(logger: Logger) {
 
     // 3. PostgreSQL errors
     if (isPostgresError(err)) {
+      if (err.code === '23505' || err.code === 'P0001') {
+        safeLog(() => ({
+          level: 'warn',
+          ctx: { ...reqContext(), pgCode: err.code, payload: logSafeBody(req.body) },
+          msg: `Database constraint rejected the request: ${err.code}`,
+        }));
+      }
       if (err.code === '23505') {
         // Unique constraint violation
         res.status(409).json({
@@ -107,13 +172,22 @@ export function createErrorHandler(logger: Logger) {
     }
 
     // 4. Unhandled / unexpected errors
-    logger.error({ err, requestId }, 'Unhandled error');
+    safeLog(() => ({
+      level: 'error',
+      ctx: { err, ...reqContext(), payload: logSafeBody(req.body) },
+      msg: 'Unhandled error',
+    }));
 
     // Report to Sentry (no-op if SENTRY_DSN not set). beforeSend strips PII.
-    Sentry.captureException(err, {
-      tags: { requestId: requestId ?? 'unknown' },
-      user: req.user ? { id: req.user.id } : undefined,
-    });
+    // Also non-essential: a transport failure here must not swallow the 500.
+    try {
+      Sentry.captureException(err, {
+        tags: { requestId: requestId ?? 'unknown' },
+        user: req.user ? { id: req.user.id } : undefined,
+      });
+    } catch {
+      // No-op — reporting the reporting failure has nowhere useful to go.
+    }
 
     res.status(500).json({
       error: {
