@@ -3,6 +3,7 @@ import { AppError } from '../../middleware/errorHandler';
 import {
   verifyProviderLink,
   findExerciseById,
+  findLiveAssignment,
   insertAssignment,
 } from '../../db/queries/providers.queries';
 import { getPatientName } from '../../db/queries/linking.queries';
@@ -23,6 +24,21 @@ export async function execute(deps: Deps, input: CreateAssignmentInput) {
 
   const exercise = await findExerciseById(deps.db, input.exerciseId, input.providerId);
   if (!exercise) throw new AppError(404, 'NOT_FOUND', 'Exercise not found in your library.');
+
+  // Reject a duplicate before inserting, so the caller gets an explanatory 409
+  // rather than a raw 23505 from idx_ea_unique_live_per_provider. The index
+  // remains the real guarantee — this check can still lose a race, and the
+  // constraint is what actually prevents the row.
+  const existing = await findLiveAssignment(
+    deps.db, input.providerId, input.patientId, input.exerciseId,
+  );
+  if (existing) {
+    throw new AppError(
+      409,
+      'ASSIGNMENT_EXISTS',
+      'This exercise is already on the patient\'s plan. Update or remove the existing assignment instead.',
+    );
+  }
 
   const assignment = await insertAssignment(deps.db, {
     exercise_id: input.exerciseId,

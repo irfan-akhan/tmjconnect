@@ -2,7 +2,7 @@
  * providers.queries.ts — All database interactions for the providers module.
  * All patient data queries enforce link check via patientProviderLinks.
  */
-import { eq, and, isNull, desc, asc, sql, like, or } from 'drizzle-orm';
+import { eq, and, isNull, desc, asc, sql, like, or, inArray } from 'drizzle-orm';
 import type { Db } from '../../config/database';
 import {
   users,
@@ -433,14 +433,18 @@ export async function updatePatientLinkMeta(
 // ─── Exercise library (provider-owned) ───────────────────────────────────────────
 
 export type ProviderExerciseRow = typeof exercises.$inferSelect & {
+  /** Distinct patients THIS provider has assigned this exercise to. */
   assignment_count: number;
   active_assignment_count: number;
+  /** Distinct patients across every provider — platform-wide reach. */
+  platform_assignment_count: number;
   completion_pct: number | null;
 };
 
 type RawExerciseListRow = typeof exercises.$inferSelect & {
   assignment_count: string | null;
   active_assignment_count: string | null;
+  platform_assignment_count: string | null;
   completion_pct: string | null;
 };
 
@@ -468,12 +472,25 @@ export async function listProviderExercises(
       e.*,
       counts.assignment_count,
       counts.active_assignment_count,
+      counts.platform_assignment_count,
       comp.completion_pct
     FROM exercises e
     LEFT JOIN LATERAL (
       SELECT
-        COUNT(*)::text AS assignment_count,
-        COUNT(*) FILTER (WHERE ea.status = 'active')::text AS active_assignment_count
+        -- DISTINCT patient: before idx_ea_unique_live_per_provider existed a
+        -- patient could hold several assignments of one exercise, each
+        -- inflating these counts.
+        --
+        -- The first two are scoped to the caller — platform exercises are shared
+        -- across every provider, so an unscoped count would report other
+        -- providers' patients as the caller's own. platform_assignment_count is
+        -- deliberately unscoped: it is the exercise's reach across the whole
+        -- platform, shown as a separate figure and never as "your patients".
+        COUNT(DISTINCT ea.patient_id)
+          FILTER (WHERE ea.provider_id = ${providerId})::text AS assignment_count,
+        COUNT(DISTINCT ea.patient_id)
+          FILTER (WHERE ea.provider_id = ${providerId} AND ea.status = 'active')::text AS active_assignment_count,
+        COUNT(DISTINCT ea.patient_id)::text AS platform_assignment_count
       FROM exercise_assignments ea
       WHERE ea.exercise_id = e.id
     ) counts ON true
@@ -493,12 +510,14 @@ export async function listProviderExercises(
         FROM exercise_completions ec
         JOIN exercise_assignments ea ON ea.id = ec.assignment_id
         WHERE ea.exercise_id = e.id
+          AND ea.provider_id = ${providerId}
           AND ec.completed_at >= NOW() - INTERVAL '14 days'
       ) completions,
       (
         SELECT SUM(ea.sets) * 14 AS expected_days
         FROM exercise_assignments ea
         WHERE ea.exercise_id = e.id
+          AND ea.provider_id = ${providerId}
           AND ea.status = 'active'
       ) expected
     ) comp ON true
@@ -517,6 +536,9 @@ export async function listProviderExercises(
     assignment_count: r.assignment_count ? parseInt(r.assignment_count, 10) : 0,
     active_assignment_count: r.active_assignment_count
       ? parseInt(r.active_assignment_count, 10)
+      : 0,
+    platform_assignment_count: r.platform_assignment_count
+      ? parseInt(r.platform_assignment_count, 10)
       : 0,
     completion_pct: r.completion_pct == null ? null : parseInt(r.completion_pct, 10),
   }));
@@ -632,6 +654,33 @@ export async function listPatientAssignments(
   (query as any) = query.limit(limit);
   (query as any) = query.offset(offset);
   return query;
+}
+
+/**
+ * An existing live assignment of this exercise, for this patient, BY THIS
+ * PROVIDER. Scoped by provider_id because platform-owned exercises are shared:
+ * a second provider treating the same patient must still be able to assign it.
+ *
+ * Mirrors the predicate of idx_ea_unique_live_per_provider — keep the two in
+ * step, since this check exists to turn that constraint into a friendly 409.
+ */
+export async function findLiveAssignment(
+  db: DbClient,
+  providerId: string,
+  patientId: string,
+  exerciseId: string,
+) {
+  const [row] = await db
+    .select()
+    .from(exerciseAssignments)
+    .where(and(
+      eq(exerciseAssignments.exercise_id, exerciseId),
+      eq(exerciseAssignments.patient_id, patientId),
+      eq(exerciseAssignments.provider_id, providerId),
+      inArray(exerciseAssignments.status, ['active', 'paused']),
+    ))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function insertAssignment(
