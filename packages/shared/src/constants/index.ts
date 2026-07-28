@@ -12,6 +12,24 @@ export const SUPPORTED_COUNTRY_LABELS: Record<SupportedCountry, string> = {
   IN: 'India',
 };
 
+// ─── Body Area Side ─────────────────────────────────────────────────────────────
+// Where on the body a logged pain point sits. Two axes share one field:
+//   lateral      — left / right / both / center
+//   anterior-post— front / back  (e.g. front vs back of the neck)
+// A zone is described on whichever axis distinguishes it, so a log may mix both.
+export const BODY_AREA_SIDES = ['left', 'right', 'both', 'center', 'front', 'back'] as const;
+export type BodyAreaSide = (typeof BODY_AREA_SIDES)[number];
+
+/** Display labels. Sentence case for provider-facing views. */
+export const BODY_AREA_SIDE_LABELS: Record<BodyAreaSide, string> = {
+  left: 'Left',
+  right: 'Right',
+  both: 'Both sides',
+  center: 'Center',
+  front: 'Front',
+  back: 'Back',
+};
+
 // ─── Report Urgency ─────────────────────────────────────────────────────────────
 export const URGENCY_LEVELS = ['routine', 'concerning', 'urgent'] as const;
 export type UrgencyLevel = (typeof URGENCY_LEVELS)[number];
