@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SUPPORTED_COUNTRIES } from '../constants';
+import { SUPPORTED_COUNTRIES, BODY_AREA_SIDES } from '../constants';
 import { freeText, optionalFreeText } from '../utils/zodHelpers';
 import { commonListQuerySchema } from './common.schemas';
 
@@ -25,7 +25,10 @@ export const createSymptomLogSchema = z.object({
   pain_types: z.array(z.string().max(50)).default([]),
   body_areas: z.array(z.object({
     area: z.string().max(50),
-    side: z.enum(['left', 'right', 'both', 'center']).optional(),
+    // 'front'/'back' describe an anterior/posterior location (e.g. front vs back
+    // of the neck), where left/right/center describe a lateral one. The client
+    // sends whichever axis the selected zone is distinguished on.
+    side: z.enum(BODY_AREA_SIDES).optional(),
   })).default([]),
   duration_minutes: z.number().int().min(0).optional().nullable(),
   triggers: z.array(z.string().max(50)).default([]),
